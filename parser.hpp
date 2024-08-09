@@ -4,9 +4,9 @@
 // 
 // Parser for settings file
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: April 2019
+// Last modified: August 2024
 //
 //////////////////////////
 
@@ -559,7 +559,6 @@ bool parseParameter(parameter * & params, const int numparam, const char * pname
 	char * comma;
 	char * l;
 	char * r;
-	char item[PARAM_MAX_LENGTH];
 	int n = 0;
 	   
 	for (int i = 0; i < numparam; i++)
@@ -759,7 +758,6 @@ bool parseFieldSpecifiers(parameter * & params, const int numparam, const char *
 int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosmology & cosmo, icsettings & ic)
 {
 	char par_string[PARAM_MAX_LENGTH];
-	char * ptr;
 	char * pptr[MAX_PCL_SPECIES];
 	int usedparams = 0;
 	int i;
@@ -791,7 +789,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 	{
 		if (par_string[0] == 'B' || par_string[0] == 'b')
 			ic.generator = ICGEN_BASIC;
-		else if (par_string[0] == 'R' || par_string[0] == 'r')
+		else if ((par_string[0] == 'R' || par_string[0] == 'r') && par_string[2] != 'L' && par_string[2] != 'l')
 			ic.generator = ICGEN_READ_FROM_DISK;
 #ifdef ICGEN_PREVOLUTION
 		else if (par_string[0] == 'P' || par_string[0] == 'p')
@@ -800,6 +798,10 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 #ifdef ICGEN_SONG
 		else if (par_string[0] == 'S' || par_string[0] == 's')
 			ic.generator = ICGEN_SONG;
+#endif
+#ifdef ICGEN_RELIC
+		else if ((par_string[0] == 'R' || par_string[0] == 'r') && (par_string[2] == 'L' || par_string[2] == 'l'))
+			ic.generator = ICGEN_RELIC;
 #endif
 #ifdef ICGEN_FALCONIC
 		else if (par_string[0] == 'F' || par_string[0] == 'f')
@@ -821,6 +823,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 	
 	for (i = 0; i < MAX_PCL_SPECIES; i++)
 		pptr[i] = ic.pclfile[i];
+
 	if (ic.generator == ICGEN_READ_FROM_DISK)
 	{
 		if (!parseParameter(params, numparam, "particle file", pptr, i))
@@ -831,7 +834,14 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 #endif
 		}
 	}
-	else if (!parseParameter(params, numparam, "template file", pptr, i))
+	else if (!parseParameter(params, numparam, "template file", pptr, i)
+	#ifdef ICGEN_SONG
+		&& ic.generator != ICGEN_SONG
+	#endif
+	#ifdef ICGEN_RELIC
+		&& ic.generator != ICGEN_RELIC
+	#endif
+	)
 	{
 		COUT << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": no template file specified!" << endl;
 #ifdef LATFIELD2_HPP
@@ -847,16 +857,21 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 			strcpy(ic.pclfile[i], ic.pclfile[i-1]);
 	}
 
+	if ((!parseParameter(params, numparam, "mPk file", ic.pkfile) && !parseParameter(params, numparam, "Tk file", ic.tkfile)
+#ifdef ICGEN_SONG
+		&& ic.generator != ICGEN_SONG
+#endif
+#ifdef ICGEN_RELIC
+		&& ic.generator != ICGEN_RELIC
+#endif
 #ifdef ICGEN_FALCONIC
-	if ((!parseParameter(params, numparam, "mPk file", ic.pkfile) && !parseParameter(params, numparam, "Tk file", ic.tkfile) && ic.generator != ICGEN_READ_FROM_DISK && ic.generator != ICGEN_FALCONIC)
-#else
-	if ((!parseParameter(params, numparam, "mPk file", ic.pkfile) && !parseParameter(params, numparam, "Tk file", ic.tkfile) && ic.generator != ICGEN_READ_FROM_DISK)
+		&& ic.generator != ICGEN_FALCONIC
 #endif
+	&& ic.generator != ICGEN_READ_FROM_DISK)
 #ifdef ICGEN_PREVOLUTION
-	    || ic.generator == ICGEN_PREVOLUTION)
-#else
-		)
+	    || ic.generator == ICGEN_PREVOLUTION
 #endif
+		)
 	{
 #ifdef HAVE_CLASS
 		COUT << " initial transfer functions will be computed by calling CLASS" << endl;
@@ -1089,6 +1104,37 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		}
 		
 		parseParameter(params, numparam, "prevolution Courant factor", ic.Cf);
+	}
+#endif
+#ifdef ICGEN_RELIC
+	else if (ic.generator == ICGEN_RELIC)
+	{
+		for (i = 0; i < 3; i++)
+			pptr[i] = ic.metricfile[i];
+		
+		parseParameter(params, numparam, "metric file", pptr, i);
+
+		for (i = 0; i < 2; i++)
+			pptr[i] = ic.densityfile[i];
+
+		if (!parseParameter(params, numparam, "density file", pptr, i))
+		{
+			COUT << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": no density file specified for IC generator = RELIC" << endl;
+#ifdef LATFIELD2_HPP
+			parallel.abortForce();
+#endif
+		}
+		
+		for (i = 0; i < 2; i++)
+			pptr[i] = ic.velocityfile[i];
+
+		if (!parseParameter(params, numparam, "velocity file", pptr, i))
+		{
+			COUT << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": no velocity file specified for IC generator = RELIC" << endl;
+#ifdef LATFIELD2_HPP
+			parallel.abortForce();
+#endif
+		}
 	}
 #endif
 
@@ -1704,6 +1750,9 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": w0_fld = -1 is singular, setting Omega_fld = 0." << endl;
 		cosmo.Omega_fld = 0.;
 	}
+
+	if (!parseParameter(params, numparam, "Omega_smg", cosmo.Omega_smg))
+		cosmo.Omega_smg = 0.;
 	
 	if (parseParameter(params, numparam, "omega_b", cosmo.Omega_b))
 	{

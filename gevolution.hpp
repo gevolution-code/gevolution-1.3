@@ -20,7 +20,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2022
+// Last modified: August 2024
 //
 //////////////////////////
 
@@ -181,13 +181,26 @@ void prepareFTsource(Field<FieldType> & phi, Field<FieldType> & chi, Field<Field
 		result(x) -= 0.375 * (phi(x-1) - phi(x+1)) * (phi(x-1) - phi(x+1));
 		result(x) -= 0.375 * (phi(x-2) - phi(x+2)) * (phi(x-2) - phi(x+2));
 #else
-		result(x) *= 1. - 2. * phi(x);
+		result(x) *= 1. - 2. * phi(x) * (1. - phi(x));
 		result(x) += 0.125 * (phi(x-0) - phi(x+0)) * (phi(x-0) - phi(x+0));
 		result(x) += 0.125 * (phi(x-1) - phi(x+1)) * (phi(x-1) - phi(x+1));
 		result(x) += 0.125 * (phi(x-2) - phi(x+2)) * (phi(x-2) - phi(x+2));
 #endif
 #endif
-		result(x) += (coeff3 - coeff) * phi(x) - coeff3 * chi(x);
+		result(x) += (coeff3 * (1. - 3. * phi(x)) - coeff) * phi(x) - coeff3 * chi(x);
+	}
+}
+
+template <class FieldType>
+void prepareFTsource(Field<FieldType> & T0i, Field<FieldType> & phi, const double coeff)
+{
+	Site x(phi.lattice());
+	
+	for (x.first(); x.test(); x.next())
+	{
+		T0i(x,0) *= (1. - 0.5 * (phi(x) + phi(x+0)));
+		T0i(x,1) *= (1. - 0.5 * (phi(x) + phi(x+1)));
+		T0i(x,2) *= (1. - 0.5 * (phi(x) + phi(x+2)));
 	}
 }
 
@@ -393,6 +406,133 @@ void projectFTvector(Field<Cplx> & SiFT, Field<Cplx> & BiFT, const Real coeff = 
 
 
 //////////////////////////
+// evolveFTtensor
+//////////////////////////
+// Description:
+//   projection of the Fourier image of a tensor field on the transverse
+//   trace-free tensor component
+// 
+// Arguments:
+//   SijFT      reference to the Fourier image of the input tensor field
+//   hijFT      reference to the Fourier image of the current hij
+//   hijprimeFT reference to the Fourier image of hij' that will be updated
+//   hubble     conformal Hubble rate
+//   dtau       next time step
+//   dtau_old   previous time step
+//
+// Returns:
+// 
+//////////////////////////
+
+void evolveFTtensor(Field<Cplx> & SijFT, Field<Cplx> & hijFT, Field<Cplx> & hijprimeFT, const double hubble, const double dtau, const double dtau_old)
+{
+	const int linesize = hijFT.lattice().size(1);
+	int i;
+	Real * gridk2;
+	Cplx * kshift;
+	rKSite k(hijFT.lattice());
+	Real k2, k4;
+	double dtau_mean = 0.5 * (dtau_old + dtau);
+	
+	gridk2 = (Real *) malloc(linesize * sizeof(Real));
+	kshift = (Cplx *) malloc(linesize * sizeof(Cplx));
+	
+	for (i = 0; i < linesize; i++)
+	{
+		gridk2[i] = 2. * (Real) linesize * sin(M_PI * (Real) i / (Real) linesize);
+		kshift[i] = gridk2[i] * Cplx(cos(M_PI * (Real) i / (Real) linesize), -sin(M_PI * (Real) i / (Real) linesize));
+		gridk2[i] *= gridk2[i];
+	}
+	
+	k.first();
+	if (k.coord(0) == 0 && k.coord(1) == 0 && k.coord(2) == 0)
+	{
+		for (i = 0; i < hijprimeFT.components(); i++)
+		{
+			hijprimeFT(k, i) = Cplx(0.,0.);
+			hijFT(k, i) = Cplx(0.,0.);
+		}
+			
+		k.next();
+	}
+	
+	for (; k.test(); k.next())
+	{		
+		k2 = gridk2[k.coord(0)] + gridk2[k.coord(1)] + gridk2[k.coord(2)];
+		k4 = k2 * k2 * linesize;
+		
+		if (k2 * dtau_mean * dtau_mean < 1.)
+		{
+			for (i = 0; i < hijprimeFT.components(); i++)
+				hijFT(k, i) += hijprimeFT(k, i) * dtau_old;
+		
+			hijprimeFT(k, 0, 0) = ((1. - hubble * dtau_mean) * hijprimeFT(k, 0, 0) + (((gridk2[k.coord(0)] - k2) * ((gridk2[k.coord(0)] - k2) * SijFT(k, 0, 0) + 2. * kshift[k.coord(0)] * (kshift[k.coord(1)] * SijFT(k, 0, 1) + kshift[k.coord(2)] * SijFT(k, 0, 2)))
+					+ ((gridk2[k.coord(0)] + k2) * (gridk2[k.coord(1)] + k2) - 2. * k2 * k2) * SijFT(k, 1, 1)
+					+ ((gridk2[k.coord(0)] + k2) * (gridk2[k.coord(2)] + k2) - 2. * k2 * k2) * SijFT(k, 2, 2)
+					+ 2. * (gridk2[k.coord(0)] + k2) * kshift[k.coord(1)] * kshift[k.coord(2)] * SijFT(k, 1, 2)) / k4 - k2 * hijFT(k, 0, 0)) * dtau_mean) / (1. + hubble * dtau_mean);
+		
+			hijprimeFT(k, 0, 1) = ((1. - hubble * dtau_mean) * hijprimeFT(k, 0, 1) + ((2. * (gridk2[k.coord(0)] - k2) * (gridk2[k.coord(1)] - k2) * SijFT(k, 0, 1) + (gridk2[k.coord(2)] + k2) * kshift[k.coord(0)].conj() * kshift[k.coord(1)].conj() * SijFT(k, 2, 2)
+					+ (gridk2[k.coord(0)] - k2) * kshift[k.coord(1)].conj() * (kshift[k.coord(0)].conj() * SijFT(k, 0, 0) + 2. * kshift[k.coord(2)] * SijFT(k, 0, 2))
+					+ (gridk2[k.coord(1)] - k2) * kshift[k.coord(0)].conj() * (kshift[k.coord(1)].conj() * SijFT(k, 1, 1) + 2. * kshift[k.coord(2)] * SijFT(k, 1, 2))) / k4 - k2 * hijFT(k, 0, 1)) * dtau_mean) / (1. + hubble * dtau_mean);
+		  
+			hijprimeFT(k, 0, 2) = ((1. - hubble * dtau_mean) * hijprimeFT(k, 0, 2) + ((2. * (gridk2[k.coord(0)] - k2) * (gridk2[k.coord(2)] - k2) * SijFT(k, 0, 2) + (gridk2[k.coord(1)] + k2) * kshift[k.coord(0)].conj() * kshift[k.coord(2)].conj() * SijFT(k, 1, 1)
+					+ (gridk2[k.coord(0)] - k2) * kshift[k.coord(2)].conj() * (kshift[k.coord(0)].conj() * SijFT(k, 0, 0) + 2. * kshift[k.coord(1)] * SijFT(k, 0, 1))
+					+ (gridk2[k.coord(2)] - k2) * kshift[k.coord(0)].conj() * (kshift[k.coord(2)].conj() * SijFT(k, 2, 2) + 2. * kshift[k.coord(1)] * SijFT(k, 1, 2))) / k4 - k2 * hijFT(k, 0, 2)) * dtau_mean) / (1. + hubble * dtau_mean);
+		
+			hijprimeFT(k, 1, 1) = ((1. - hubble * dtau_mean) * hijprimeFT(k, 1, 1) + (((gridk2[k.coord(1)] - k2) * ((gridk2[k.coord(1)] - k2) * SijFT(k, 1, 1) + 2. * kshift[k.coord(1)] * (kshift[k.coord(0)] * SijFT(k, 0, 1) + kshift[k.coord(2)] * SijFT(k, 1, 2)))
+					+ ((gridk2[k.coord(1)] + k2) * (gridk2[k.coord(0)] + k2) - 2. * k2 * k2) * SijFT(k, 0, 0)
+					+ ((gridk2[k.coord(1)] + k2) * (gridk2[k.coord(2)] + k2) - 2. * k2 * k2) * SijFT(k, 2, 2)
+					+ 2. * (gridk2[k.coord(1)] + k2) * kshift[k.coord(0)] * kshift[k.coord(2)] * SijFT(k, 0, 2)) / k4 - k2 * hijFT(k, 1, 1)) * dtau_mean) / (1. + hubble * dtau_mean);
+		
+			hijprimeFT(k, 1, 2) = ((1. - hubble * dtau_mean) * hijprimeFT(k, 1, 2) + ((2. * (gridk2[k.coord(1)] - k2) * (gridk2[k.coord(2)] - k2) * SijFT(k, 1, 2) + (gridk2[k.coord(0)] + k2) * kshift[k.coord(1)].conj() * kshift[k.coord(2)].conj() * SijFT(k, 0, 0)
+					+ (gridk2[k.coord(1)] - k2) * kshift[k.coord(2)].conj() * (kshift[k.coord(1)].conj() * SijFT(k, 1, 1) + 2. * kshift[k.coord(0)] * SijFT(k, 0, 1))
+					+ (gridk2[k.coord(2)] - k2) * kshift[k.coord(1)].conj() * (kshift[k.coord(2)].conj() * SijFT(k, 2, 2) + 2. * kshift[k.coord(0)] * SijFT(k, 0, 2))) / k4 - k2 * hijFT(k, 1, 2)) * dtau_mean) / (1. + hubble * dtau_mean);
+		
+			hijprimeFT(k, 2, 2) = ((1. - hubble * dtau_mean) * hijprimeFT(k, 2, 2) + (((gridk2[k.coord(2)] - k2) * ((gridk2[k.coord(2)] - k2) * SijFT(k, 2, 2) + 2. * kshift[k.coord(2)] * (kshift[k.coord(0)] * SijFT(k, 0, 2) + kshift[k.coord(1)] * SijFT(k, 1, 2)))
+					+ ((gridk2[k.coord(2)] + k2) * (gridk2[k.coord(0)] + k2) - 2. * k2 * k2) * SijFT(k, 0, 0)
+					+ ((gridk2[k.coord(2)] + k2) * (gridk2[k.coord(1)] + k2) - 2. * k2 * k2) * SijFT(k, 1, 1)
+					+ 2. * (gridk2[k.coord(2)] + k2) * kshift[k.coord(0)] * kshift[k.coord(1)] * SijFT(k, 0, 1)) / k4 - k2 * hijFT(k, 2, 2)) * dtau_mean) / (1. + hubble * dtau_mean);
+		}
+		else
+		{
+			for (i = 0; i < hijprimeFT.components(); i++)
+				hijprimeFT(k, i) = Cplx(0.,0.);
+		
+			hijFT(k, 0, 0) = (((gridk2[k.coord(0)] - k2) * ((gridk2[k.coord(0)] - k2) * SijFT(k, 0, 0) + 2. * kshift[k.coord(0)] * (kshift[k.coord(1)] * SijFT(k, 0, 1) + kshift[k.coord(2)] * SijFT(k, 0, 2)))
+					+ ((gridk2[k.coord(0)] + k2) * (gridk2[k.coord(1)] + k2) - 2. * k2 * k2) * SijFT(k, 1, 1)
+					+ ((gridk2[k.coord(0)] + k2) * (gridk2[k.coord(2)] + k2) - 2. * k2 * k2) * SijFT(k, 2, 2)
+					+ 2. * (gridk2[k.coord(0)] + k2) * kshift[k.coord(1)] * kshift[k.coord(2)] * SijFT(k, 1, 2)) * dtau_old / k4 + 2. * hubble * hijFT(k, 0, 0)) / (k2 * dtau_old + 2. * hubble);
+		
+			hijFT(k, 0, 1) = ((2. * (gridk2[k.coord(0)] - k2) * (gridk2[k.coord(1)] - k2) * SijFT(k, 0, 1) + (gridk2[k.coord(2)] + k2) * kshift[k.coord(0)].conj() * kshift[k.coord(1)].conj() * SijFT(k, 2, 2)
+					+ (gridk2[k.coord(0)] - k2) * kshift[k.coord(1)].conj() * (kshift[k.coord(0)].conj() * SijFT(k, 0, 0) + 2. * kshift[k.coord(2)] * SijFT(k, 0, 2))
+					+ (gridk2[k.coord(1)] - k2) * kshift[k.coord(0)].conj() * (kshift[k.coord(1)].conj() * SijFT(k, 1, 1) + 2. * kshift[k.coord(2)] * SijFT(k, 1, 2))) * dtau_old / k4 + 2. * hubble * hijFT(k, 0, 1)) / (k2 * dtau_old + 2. * hubble);
+		  
+			hijFT(k, 0, 2) = ((2. * (gridk2[k.coord(0)] - k2) * (gridk2[k.coord(2)] - k2) * SijFT(k, 0, 2) + (gridk2[k.coord(1)] + k2) * kshift[k.coord(0)].conj() * kshift[k.coord(2)].conj() * SijFT(k, 1, 1)
+					+ (gridk2[k.coord(0)] - k2) * kshift[k.coord(2)].conj() * (kshift[k.coord(0)].conj() * SijFT(k, 0, 0) + 2. * kshift[k.coord(1)] * SijFT(k, 0, 1))
+					+ (gridk2[k.coord(2)] - k2) * kshift[k.coord(0)].conj() * (kshift[k.coord(2)].conj() * SijFT(k, 2, 2) + 2. * kshift[k.coord(1)] * SijFT(k, 1, 2))) * dtau_old / k4 + 2. * hubble * hijFT(k, 0, 2)) / (k2 * dtau_old + 2. * hubble);
+		
+			hijFT(k, 1, 1) = (((gridk2[k.coord(1)] - k2) * ((gridk2[k.coord(1)] - k2) * SijFT(k, 1, 1) + 2. * kshift[k.coord(1)] * (kshift[k.coord(0)] * SijFT(k, 0, 1) + kshift[k.coord(2)] * SijFT(k, 1, 2)))
+					+ ((gridk2[k.coord(1)] + k2) * (gridk2[k.coord(0)] + k2) - 2. * k2 * k2) * SijFT(k, 0, 0)
+					+ ((gridk2[k.coord(1)] + k2) * (gridk2[k.coord(2)] + k2) - 2. * k2 * k2) * SijFT(k, 2, 2)
+					+ 2. * (gridk2[k.coord(1)] + k2) * kshift[k.coord(0)] * kshift[k.coord(2)] * SijFT(k, 0, 2)) * dtau_old / k4 + 2. * hubble * hijFT(k, 1, 1)) / (k2 * dtau_old + 2. * hubble);
+		
+			hijFT(k, 1, 2) = ((2. * (gridk2[k.coord(1)] - k2) * (gridk2[k.coord(2)] - k2) * SijFT(k, 1, 2) + (gridk2[k.coord(0)] + k2) * kshift[k.coord(1)].conj() * kshift[k.coord(2)].conj() * SijFT(k, 0, 0)
+					+ (gridk2[k.coord(1)] - k2) * kshift[k.coord(2)].conj() * (kshift[k.coord(1)].conj() * SijFT(k, 1, 1) + 2. * kshift[k.coord(0)] * SijFT(k, 0, 1))
+					+ (gridk2[k.coord(2)] - k2) * kshift[k.coord(1)].conj() * (kshift[k.coord(2)].conj() * SijFT(k, 2, 2) + 2. * kshift[k.coord(0)] * SijFT(k, 0, 2))) * dtau_old / k4 + 2. * hubble * hijFT(k, 1, 2)) / (k2 * dtau_old + 2. * hubble);
+		
+			hijFT(k, 2, 2) = (((gridk2[k.coord(2)] - k2) * ((gridk2[k.coord(2)] - k2) * SijFT(k, 2, 2) + 2. * kshift[k.coord(2)] * (kshift[k.coord(0)] * SijFT(k, 0, 2) + kshift[k.coord(1)] * SijFT(k, 1, 2)))
+					+ ((gridk2[k.coord(2)] + k2) * (gridk2[k.coord(0)] + k2) - 2. * k2 * k2) * SijFT(k, 0, 0)
+					+ ((gridk2[k.coord(2)] + k2) * (gridk2[k.coord(1)] + k2) - 2. * k2 * k2) * SijFT(k, 1, 1)
+					+ 2. * (gridk2[k.coord(2)] + k2) * kshift[k.coord(0)] * kshift[k.coord(1)] * SijFT(k, 0, 1)) * dtau_old / k4 + 2. * hubble * hijFT(k, 2, 2)) / (k2 * dtau_old + 2. * hubble);
+		}
+	}
+	
+	free(gridk2);
+	free(kshift);
+}
+
+
+//////////////////////////
 // projectFTtensor
 //////////////////////////
 // Description:
@@ -503,7 +643,6 @@ void solveModifiedPoissonFT(Field<Cplx> & sourceFT, Field<Cplx> & potFT, Real co
 	const int linesize = potFT.lattice().size(1);
 	int i;
 	Real * gridk2;
-	Real * sinc;
 	rKSite k(potFT.lattice());
 	
 	gridk2 = (Real *) malloc(linesize * sizeof(Real));
@@ -581,6 +720,18 @@ Real update_q(double dtau, double dx, part_simple * part, double * ref_dist, par
 	Real v2 = (*part).vel[0] * (*part).vel[0] + (*part).vel[1] * (*part).vel[1] + (*part).vel[2] * (*part).vel[2];
 	Real e2 = v2 + params[0] * params[0];
 
+	Real phiint = (1.-ref_dist[0]) * (1.-ref_dist[1]) * (1.-ref_dist[2]) * phi(xphi);
+	phiint += ref_dist[0] * (1.-ref_dist[1]) * (1.-ref_dist[2]) * phi(xphi+0);
+	phiint += (1.-ref_dist[0]) * ref_dist[1] * (1.-ref_dist[2]) * phi(xphi+1);
+	phiint += ref_dist[0] * ref_dist[1] * (1.-ref_dist[2]) * phi(xphi+1+0);
+	phiint += (1.-ref_dist[0]) * (1.-ref_dist[1]) * ref_dist[2] * phi(xphi+2);
+	phiint += ref_dist[0] * (1.-ref_dist[1]) * ref_dist[2] * phi(xphi+2+0);
+	phiint += (1.-ref_dist[0]) * ref_dist[1] * ref_dist[2] * phi(xphi+2+1);
+	phiint += ref_dist[0] * ref_dist[1] * ref_dist[2] * phi(xphi+2+1+0);
+	
+	phiint /= e2;
+	phiint = 4. * phiint * v2 + (1. + params[0] * params[0] * phiint) * (v2 + e2) / e2;
+
 #if GRADIENT_ORDER == 1	
 	gradphi[0] = (1.-ref_dist[1]) * (1.-ref_dist[2]) * (phi(xphi+0) - phi(xphi));
 	gradphi[1] = (1.-ref_dist[0]) * (1.-ref_dist[2]) * (phi(xphi+1) - phi(xphi));
@@ -610,9 +761,9 @@ Real update_q(double dtau, double dx, part_simple * part, double * ref_dist, par
 #error GRADIENT_ORDER must be set to 1 or 2
 #endif
 
-	gradphi[0] *= (v2 + e2) / e2;
-	gradphi[1] *= (v2 + e2) / e2;
-	gradphi[2] *= (v2 + e2) / e2;
+	gradphi[0] *= phiint;
+	gradphi[1] *= phiint;
+	gradphi[2] *= phiint;
 	
 	if (nfield>=2 && fields[1] != NULL)
 	{
@@ -935,8 +1086,6 @@ void projection_T00_project(Particles<part, part_info, part_dataType> * pcls, Fi
 	Site xPart(pcls->lattice());
 	Site xField(T00->lattice());
 	
-	typename std::list<part>::iterator it;
-	
 	Real referPos[3];
 	Real weightScalarGridUp[3];
 	Real weightScalarGridDown[3];
@@ -946,7 +1095,7 @@ void projection_T00_project(Particles<part, part_info, part_dataType> * pcls, Fi
 	mass *= *(double*)((char*)pcls->parts_info() + pcls->mass_offset());
 	mass /= a;
 	
-	Real e = a, f = 0.;
+	Real e = a, f = 0., f2 = 0.;
 	Real * q;
 	size_t offset_q = offsetof(part,vel);
 	
@@ -957,7 +1106,7 @@ void projection_T00_project(Particles<part, part_info, part_dataType> * pcls, Fi
 	   
 	for (xPart.first(),xField.first(); xPart.test(); xPart.next(),xField.next())
 	{			  
-		if (pcls->field()(xPart).size != 0)
+		if (!pcls->field()(xPart).parts.empty())
 		{
 			for(int i=0; i<3; i++) referPos[i] = xPart.coord(i)*dx;
 			for(int i=0; i<8; i++) localCube[i] = 0.0;
@@ -974,7 +1123,7 @@ void projection_T00_project(Particles<part, part_info, part_dataType> * pcls, Fi
 				localCubePhi[7] = (*phi)(xField+0+1+2);
 			}
 			
-			for (it=(pcls->field())(xPart).parts.begin(); it != (pcls->field())(xPart).parts.end(); ++it)
+			for (auto it=(pcls->field())(xPart).parts.begin(); it != (pcls->field())(xPart).parts.end(); ++it)
 			{
 				for (int i=0; i<3; i++)
 				{
@@ -986,27 +1135,28 @@ void projection_T00_project(Particles<part, part_info, part_dataType> * pcls, Fi
 				{
 					q = (Real*)((char*)&(*it)+offset_q);
 				
-					f = q[0] * q[0] + q[1] * q[1] + q[2] * q[2];
-					e = sqrt(f + a * a);
-					f = 3. * e + f / e;
+					f2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2];
+					e = sqrt(f2 + a * a);
+					f = 3. * e + f2 / e;
+					f2 = (0.5 * f * f + f2 / (1. + f2 / a / a)) / e;
 				}
 				
 				//000
-				localCube[0] += weightScalarGridDown[0]*weightScalarGridDown[1]*weightScalarGridDown[2]*(e+f*localCubePhi[0]);
+				localCube[0] += weightScalarGridDown[0]*weightScalarGridDown[1]*weightScalarGridDown[2]*(e+f*localCubePhi[0]+f2*localCubePhi[0]*localCubePhi[0]);
 				//001
-				localCube[1] += weightScalarGridDown[0]*weightScalarGridDown[1]*weightScalarGridUp[2]*(e+f*localCubePhi[1]);
+				localCube[1] += weightScalarGridDown[0]*weightScalarGridDown[1]*weightScalarGridUp[2]*(e+f*localCubePhi[1]+f2*localCubePhi[1]*localCubePhi[1]);
 				//010
-				localCube[2] += weightScalarGridDown[0]*weightScalarGridUp[1]*weightScalarGridDown[2]*(e+f*localCubePhi[2]);
+				localCube[2] += weightScalarGridDown[0]*weightScalarGridUp[1]*weightScalarGridDown[2]*(e+f*localCubePhi[2]+f2*localCubePhi[2]*localCubePhi[2]);
 				//011
-				localCube[3] += weightScalarGridDown[0]*weightScalarGridUp[1]*weightScalarGridUp[2]*(e+f*localCubePhi[3]);
+				localCube[3] += weightScalarGridDown[0]*weightScalarGridUp[1]*weightScalarGridUp[2]*(e+f*localCubePhi[3]+f2*localCubePhi[3]*localCubePhi[3]);
 				//100
-				localCube[4] += weightScalarGridUp[0]*weightScalarGridDown[1]*weightScalarGridDown[2]*(e+f*localCubePhi[4]);
+				localCube[4] += weightScalarGridUp[0]*weightScalarGridDown[1]*weightScalarGridDown[2]*(e+f*localCubePhi[4]+f2*localCubePhi[4]*localCubePhi[4]);
 				//101
-				localCube[5] += weightScalarGridUp[0]*weightScalarGridDown[1]*weightScalarGridUp[2]*(e+f*localCubePhi[5]);
+				localCube[5] += weightScalarGridUp[0]*weightScalarGridDown[1]*weightScalarGridUp[2]*(e+f*localCubePhi[5]+f2*localCubePhi[5]*localCubePhi[5]);
 				//110
-				localCube[6] += weightScalarGridUp[0]*weightScalarGridUp[1]*weightScalarGridDown[2]*(e+f*localCubePhi[6]);
+				localCube[6] += weightScalarGridUp[0]*weightScalarGridUp[1]*weightScalarGridDown[2]*(e+f*localCubePhi[6]+f2*localCubePhi[6]*localCubePhi[6]);
 				//111
-				localCube[7] += weightScalarGridUp[0]*weightScalarGridUp[1]*weightScalarGridUp[2]*(e+f*localCubePhi[7]);
+				localCube[7] += weightScalarGridUp[0]*weightScalarGridUp[1]*weightScalarGridUp[2]*(e+f*localCubePhi[7]+f2*localCubePhi[7]*localCubePhi[7]);
 			}
 			
 			(*T00)(xField)	   += localCube[0] * mass;
@@ -1054,8 +1204,6 @@ void projection_T0i_project(Particles<part,part_info,part_dataType> * pcls, Fiel
 	Site xPart(pcls->lattice());
 	Site xT0i(T0i->lattice());
     
-	typename std::list<part>::iterator it;
-    
 	Real referPos[3];
 	Real weightScalarGridDown[3];
 	Real weightScalarGridUp[3];
@@ -1075,7 +1223,7 @@ void projection_T0i_project(Particles<part,part_info,part_dataType> * pcls, Fiel
     
 	for(xPart.first(),xT0i.first();xPart.test();xPart.next(),xT0i.next())
 	{
-		if(pcls->field()(xPart).size!=0)
+		if(!pcls->field()(xPart).parts.empty())
         {
         	for(int i=0; i<3; i++)
         		referPos[i] = xPart.coord(i)*dx;
@@ -1094,7 +1242,7 @@ void projection_T0i_project(Particles<part,part_info,part_dataType> * pcls, Fiel
 				localCubePhi[7] = (*phi)(xT0i+0+1+2);
 			}
 
-			for (it=(pcls->field())(xPart).parts.begin(); it != (pcls->field())(xPart).parts.end(); ++it)
+			for (auto it=(pcls->field())(xPart).parts.begin(); it != (pcls->field())(xPart).parts.end(); ++it)
 			{
 				for (int i =0; i<3; i++)
 				{
@@ -1181,8 +1329,6 @@ void projection_Tij_project(Particles<part, part_info, part_dataType> * pcls, Fi
 	Site xPart(pcls->lattice());
 	Site xTij(Tij->lattice());
 	
-	typename std::list<part>::iterator it;
-	
 	Real referPos[3];
 	Real weightScalarGridDown[3];
 	Real weightScalarGridUp[3];
@@ -1195,8 +1341,15 @@ void projection_Tij_project(Particles<part, part_info, part_dataType> * pcls, Fi
 	Real e, f, w;
 	Real * q;
 	size_t offset_q = offsetof(part,vel);
-	
+
+#ifdef CIC_PROJECT_TIJ
+	Real  tij[54];          // local cube
+	Real  weightTensorGrid01[9];
+	Real  weightTensorGrid02[9];
+	Real  weightTensorGrid12[9];
+#else	
 	Real  tij[6];           // local cube
+#endif
 	Real  tii[24];          // local cube
 	Real  localCubePhi[8];
 	
@@ -1204,12 +1357,16 @@ void projection_Tij_project(Particles<part, part_info, part_dataType> * pcls, Fi
 
 	for (xPart.first(),xTij.first(); xPart.test(); xPart.next(),xTij.next())
 	{
-		if (pcls->field()(xPart).size != 0)
+		if (!pcls->field()(xPart).parts.empty())
 		{
-			for (int i=0;i<3;i++)
+			for (int i=0; i<3; i++)
 				referPos[i] = (double)xPart.coord(i)*dx;
 			
+#ifdef CIC_PROJECT_TIJ
+			for (int i=0; i<54; i++) tij[i]=0.0;
+#else
 			for (int i=0; i<6; i++)  tij[i]=0.0;
+#endif
 			for (int i=0; i<24; i++) tii[i]=0.0;
 			
 			if (phi != NULL)
@@ -1224,74 +1381,236 @@ void projection_Tij_project(Particles<part, part_info, part_dataType> * pcls, Fi
 				localCubePhi[7] = (*phi)(xTij+0+1+2);
 			}
 			
-			for (it=(pcls->field())(xPart).parts.begin(); it != (pcls->field())(xPart).parts.end(); ++it)
+			for (auto it=(pcls->field())(xPart).parts.begin(); it != (pcls->field())(xPart).parts.end(); ++it)
 			{
-				for (int i =0; i<3; i++)
+				for (int i=0; i<3; i++)
 				{
 					weightScalarGridUp[i] = ((*it).pos[i] - referPos[i]) / dx;
 					weightScalarGridDown[i] = 1.0l - weightScalarGridUp[i];
 				}
+
+#ifdef CIC_PROJECT_TIJ
+				if (weightScalarGridDown[0] < 0.5)
+				{
+					for (int j=0; j<3; j++)
+					{
+						weightTensorGrid01[j*3] = 0.;
+						weightTensorGrid01[j*3+1] = weightScalarGridDown[0] + 0.5;
+						weightTensorGrid01[j*3+2] = 0.5 - weightScalarGridDown[0];
+
+						weightTensorGrid02[j*3] = 0.;
+						weightTensorGrid02[j*3+1] = weightScalarGridDown[0] + 0.5;
+						weightTensorGrid02[j*3+2] = 0.5 - weightScalarGridDown[0];
+					}
+				}
+				else
+				{
+					for (int j=0; j<3; j++)
+					{
+						weightTensorGrid01[j*3] = weightScalarGridDown[0] - 0.5;
+						weightTensorGrid01[j*3+1] = 1.5 - weightScalarGridDown[0];
+						weightTensorGrid01[j*3+2] = 0.;
+
+						weightTensorGrid02[j*3] = weightScalarGridDown[0] - 0.5;
+						weightTensorGrid02[j*3+1] = 1.5 - weightScalarGridDown[0];
+						weightTensorGrid02[j*3+2] = 0.;
+					}
+				}
+
+				if (weightScalarGridDown[1] < 0.5)
+				{
+					for (int j=0; j<3; j++)
+					{
+						weightTensorGrid01[j] = 0.;
+						weightTensorGrid01[j+3] *= weightScalarGridDown[1] + 0.5;
+						weightTensorGrid01[j+6] *= 0.5 - weightScalarGridDown[1];
+
+						weightTensorGrid12[j*3] = 0.;
+						weightTensorGrid12[j*3+1] = weightScalarGridDown[1] + 0.5;
+						weightTensorGrid12[j*3+2] = 0.5 - weightScalarGridDown[1];
+					}
+				}
+				else
+				{
+					for (int j=0; j<3; j++)
+					{
+						weightTensorGrid01[j] *= weightScalarGridDown[1] - 0.5;
+						weightTensorGrid01[j+3] *= 1.5 - weightScalarGridDown[1];
+						weightTensorGrid01[j+6] = 0.;
+
+						weightTensorGrid12[j*3] = weightScalarGridDown[1] - 0.5;
+						weightTensorGrid12[j*3+1] = 1.5 - weightScalarGridDown[1];
+						weightTensorGrid12[j*3+2] = 0.;
+					}
+				}
+
+				if (weightScalarGridDown[2] < 0.5)
+				{
+					for (int j=0; j<3; j++)
+					{
+						weightTensorGrid02[j] = 0.;
+						weightTensorGrid02[j+3] *= weightScalarGridDown[2] + 0.5;
+						weightTensorGrid02[j+6] *= 0.5 - weightScalarGridDown[2];
+
+						weightTensorGrid12[j] = 0.;
+						weightTensorGrid12[j+3] *= weightScalarGridDown[2] + 0.5;
+						weightTensorGrid12[j+6] *= 0.5 - weightScalarGridDown[2];
+					}
+				}
+				else
+				{
+					for (int j=0; j<3; j++)
+					{
+						weightTensorGrid02[j] *= weightScalarGridDown[2] - 0.5;
+						weightTensorGrid02[j+3] *= 1.5 - weightScalarGridDown[2];
+						weightTensorGrid02[j+6] = 0.;
+
+						weightTensorGrid12[j] *= weightScalarGridDown[2] - 0.5;
+						weightTensorGrid12[j+3] *= 1.5 - weightScalarGridDown[2];
+						weightTensorGrid12[j+6] = 0.;
+					}
+				}
+#endif
 								
 				q = (Real*)((char*)&(*it)+offset_q);
 				f = q[0] * q[0] + q[1] * q[1] + q[2] * q[2];
 				e = sqrt(f + a * a);
 				f = 4. + a * a / (f + a * a);
+				f *= weightScalarGridDown[0] * (weightScalarGridDown[1] * (weightScalarGridDown[2] * localCubePhi[0] + weightScalarGridUp[2] * localCubePhi[1]) + weightScalarGridUp[1] * (weightScalarGridDown[2] * localCubePhi[2] + weightScalarGridUp[2] * localCubePhi[3])) + weightScalarGridUp[0] * (weightScalarGridDown[1] * (weightScalarGridDown[2] * localCubePhi[4] + weightScalarGridUp[2] * localCubePhi[5]) + weightScalarGridUp[1] * (weightScalarGridDown[2] * localCubePhi[6] + weightScalarGridUp[2] * localCubePhi[7]));
+				f += 1.;
 								
 				// diagonal components				
 				for (int i=0; i<3; i++)
 				{
 					w = mass * q[i] * q[i] / e;
 					//000
-					tii[0+i*8] += w * weightScalarGridDown[0] * weightScalarGridDown[1] * weightScalarGridDown[2] * (1. + f * localCubePhi[0]);
+					tii[0+i*8] += w * weightScalarGridDown[0] * weightScalarGridDown[1] * weightScalarGridDown[2] * f;
 					//001
-					tii[1+i*8] += w * weightScalarGridDown[0] * weightScalarGridDown[1] * weightScalarGridUp[2]   * (1. + f * localCubePhi[1]); 
+					tii[1+i*8] += w * weightScalarGridDown[0] * weightScalarGridDown[1] * weightScalarGridUp[2]   * f; 
 					//010
-					tii[2+i*8] += w * weightScalarGridDown[0] * weightScalarGridUp[1]   * weightScalarGridDown[2] * (1. + f * localCubePhi[2]);
+					tii[2+i*8] += w * weightScalarGridDown[0] * weightScalarGridUp[1]   * weightScalarGridDown[2] * f;
 					//011
-					tii[3+i*8] += w * weightScalarGridDown[0] * weightScalarGridUp[1]   * weightScalarGridUp[2]   * (1. + f * localCubePhi[3]);
+					tii[3+i*8] += w * weightScalarGridDown[0] * weightScalarGridUp[1]   * weightScalarGridUp[2]   * f;
 					//100
-					tii[4+i*8] += w * weightScalarGridUp[0]   * weightScalarGridDown[1] * weightScalarGridDown[2] * (1. + f * localCubePhi[4]);
+					tii[4+i*8] += w * weightScalarGridUp[0]   * weightScalarGridDown[1] * weightScalarGridDown[2] * f;
 					//101
-					tii[5+i*8] += w * weightScalarGridUp[0]   * weightScalarGridDown[1] * weightScalarGridUp[2]   * (1. + f * localCubePhi[5]);
+					tii[5+i*8] += w * weightScalarGridUp[0]   * weightScalarGridDown[1] * weightScalarGridUp[2]   * f;
 					//110
-					tii[6+i*8] += w * weightScalarGridUp[0]   * weightScalarGridUp[1]   * weightScalarGridDown[2] * (1. + f * localCubePhi[6]);
+					tii[6+i*8] += w * weightScalarGridUp[0]   * weightScalarGridUp[1]   * weightScalarGridDown[2] * f;
 					//111
-					tii[7+i*8] += w * weightScalarGridUp[0]   * weightScalarGridUp[1]   * weightScalarGridUp[2]   * (1. + f * localCubePhi[7]);
+					tii[7+i*8] += w * weightScalarGridUp[0]   * weightScalarGridUp[1]   * weightScalarGridUp[2]   * f;
 				}
 				
 				w = mass * q[0] * q[1] / e;
-				tij[0] +=  w * weightScalarGridDown[2] * (1. + f * 0.25 * (localCubePhi[0] + localCubePhi[2] + localCubePhi[4] + localCubePhi[6]));
-				tij[1] +=  w * weightScalarGridUp[2] * (1. + f * 0.25 * (localCubePhi[1] + localCubePhi[3] + localCubePhi[5] + localCubePhi[7]));
+#ifdef CIC_PROJECT_TIJ
+				for (int i = 0; i < 9; i++)
+				{
+					tij[i] += w * weightScalarGridDown[2] * weightTensorGrid01[i] * f;
+					tij[i+9] += w * weightScalarGridUp[2] * weightTensorGrid01[i] * f;
+				}
+#else
+				tij[0] +=  w * weightScalarGridDown[2] * f;
+				tij[1] +=  w * weightScalarGridUp[2] * f;
+#endif
 				
 				w = mass * q[0] * q[2] / e;
-				tij[2] +=  w * weightScalarGridDown[1] * (1. + f * 0.25 * (localCubePhi[0] + localCubePhi[1] + localCubePhi[4] + localCubePhi[5]));
-				tij[3] +=  w * weightScalarGridUp[1] * (1. + f * 0.25 * (localCubePhi[2] + localCubePhi[3] + localCubePhi[6] + localCubePhi[7]));
+#ifdef CIC_PROJECT_TIJ
+				for (int i = 0; i < 9; i++)
+				{
+					tij[i+18] += w * weightScalarGridDown[1] * weightTensorGrid02[i] * f;
+					tij[i+27] += w * weightScalarGridUp[1] * weightTensorGrid02[i] * f;
+				}
+#else
+				tij[2] +=  w * weightScalarGridDown[1] * f;
+				tij[3] +=  w * weightScalarGridUp[1] * f;
+#endif
 				
 				w = mass * q[1] * q[2] / e;
-				tij[4] +=  w * weightScalarGridDown[0] * (1. + f * 0.25 * (localCubePhi[0] + localCubePhi[1] + localCubePhi[2] + localCubePhi[3]));
-				tij[5] +=  w * weightScalarGridUp[0] * (1. + f * 0.25 * (localCubePhi[4] + localCubePhi[5] + localCubePhi[6] + localCubePhi[7]));
-				
+#ifdef CIC_PROJECT_TIJ
+				for (int i = 0; i < 9; i++)
+				{
+					tij[i+36] += w * weightScalarGridDown[0] * weightTensorGrid12[i] * f;
+					tij[i+45] += w * weightScalarGridUp[0] * weightTensorGrid12[i] * f;
+				}
+#else
+				tij[4] +=  w * weightScalarGridDown[0] * f;
+				tij[5] +=  w * weightScalarGridUp[0] * f;
+#endif		
 			}
 			
 			
 			for (int i=0; i<3; i++) (*Tij)(xTij,i,i) += tii[8*i];
-			(*Tij)(xTij,0,1) += tij[0];
-			(*Tij)(xTij,0,2) += tij[2];
-			(*Tij)(xTij,1,2) += tij[4];
-			
 			for (int i=0; i<3; i++) (*Tij)(xTij+0,i,i) += tii[4+8*i];
-			(*Tij)(xTij+0,1,2) += tij[5];
-			
 			for (int i=0; i<3; i++) (*Tij)(xTij+1,i,i) += tii[2+8*i];
-			(*Tij)(xTij+1,0,2) += tij[3];
-			
-			for (int i=0; i<3; i++) (*Tij)(xTij+2,i,i) += tii[1+8*i];
-			(*Tij)(xTij+2,0,1) += tij[1];
-			
+			for (int i=0; i<3; i++) (*Tij)(xTij+2,i,i) += tii[1+8*i];	
 			for (int i=0; i<3; i++) (*Tij)(xTij+0+1,i,i) += tii[6+8*i];
 			for (int i=0; i<3; i++) (*Tij)(xTij+0+2,i,i) += tii[5+8*i];
 			for (int i=0; i<3; i++) (*Tij)(xTij+1+2,i,i) += tii[3+8*i];
-			for (int i=0; i<3; i++) (*Tij)(xTij+0+1+2,i,i) += tii[7+8*i];			
+			for (int i=0; i<3; i++) (*Tij)(xTij+0+1+2,i,i) += tii[7+8*i];
+
+#ifdef CIC_PROJECT_TIJ
+			(*Tij)(xTij,0,1) += tij[4];
+			(*Tij)(xTij,0,2) += tij[22];
+			(*Tij)(xTij,1,2) += tij[40];
+			(*Tij)(xTij-0-1,0,1) += tij[0];
+			(*Tij)(xTij-0-1+2,0,1) += tij[9];
+			(*Tij)(xTij-0+1,0,1) += tij[6];
+			(*Tij)(xTij-0+1,0,2) += tij[30];
+			(*Tij)(xTij-0,0,1) += tij[3];
+			(*Tij)(xTij-0,0,2) += tij[21];
+			(*Tij)(xTij-0-2,0,2) += tij[18];
+			(*Tij)(xTij-0+1-2,0,2) += tij[27];
+			(*Tij)(xTij-0+2,0,1) += tij[12];
+			(*Tij)(xTij-0+2,0,2) += tij[24];
+			(*Tij)(xTij-1,0,1) += tij[1];
+			(*Tij)(xTij-1,1,2) += tij[39];
+			(*Tij)(xTij-1-2,1,2) += tij[36];
+			(*Tij)(xTij+0-1-2,1,2) += tij[45];
+			(*Tij)(xTij+0-1,0,1) += tij[2];
+			(*Tij)(xTij+0-1,1,2) += tij[48];
+			(*Tij)(xTij-1+2,0,1) += tij[10];
+			(*Tij)(xTij-1+2,1,2) += tij[42];
+			(*Tij)(xTij-2,0,2) += tij[19];
+			(*Tij)(xTij-2,1,2) += tij[37];
+			(*Tij)(xTij+0-2,0,2) += tij[20];
+			(*Tij)(xTij+0-2,1,2) += tij[46];
+			(*Tij)(xTij+1-2,0,2) += tij[28];
+			(*Tij)(xTij+1-2,1,2) += tij[38];
+			(*Tij)(xTij+0+1-2,0,2) += tij[29];
+			(*Tij)(xTij+0+1-2,1,2) += tij[47];
+			(*Tij)(xTij+0-1+2,0,1) += tij[11];
+			(*Tij)(xTij+0-1+2,1,2) += tij[51];
+			(*Tij)(xTij-0+1+2,0,1) += tij[15];
+			(*Tij)(xTij-0+1+2,0,2) += tij[33];
+			(*Tij)(xTij+0,0,1) += tij[5];
+			(*Tij)(xTij+0,0,2) += tij[23];
+			(*Tij)(xTij+0,1,2) += tij[49];
+			(*Tij)(xTij+1,0,1) += tij[7];
+			(*Tij)(xTij+1,0,2) += tij[31];
+			(*Tij)(xTij+1,1,2) += tij[41];
+			(*Tij)(xTij+0+1,0,1) += tij[8];
+			(*Tij)(xTij+0+1,0,2) += tij[32];
+			(*Tij)(xTij+0+1,1,2) += tij[50];
+			(*Tij)(xTij+2,0,1) += tij[13];
+			(*Tij)(xTij+2,0,2) += tij[25];
+			(*Tij)(xTij+2,1,2) += tij[43];
+			(*Tij)(xTij+0+2,0,1) += tij[14];
+			(*Tij)(xTij+0+2,0,2) += tij[26];
+			(*Tij)(xTij+0+2,1,2) += tij[52];
+			(*Tij)(xTij+1+2,0,1) += tij[16];
+			(*Tij)(xTij+1+2,0,2) += tij[34];
+			(*Tij)(xTij+1+2,1,2) += tij[44];
+			(*Tij)(xTij+0+1+2,0,1) += tij[17];
+			(*Tij)(xTij+0+1+2,0,2) += tij[35];
+			(*Tij)(xTij+0+1+2,1,2) += tij[53];
+#else
+			(*Tij)(xTij,0,1) += tij[0];
+			(*Tij)(xTij,0,2) += tij[2];
+			(*Tij)(xTij,1,2) += tij[4];	
+			(*Tij)(xTij+0,1,2) += tij[5];
+			(*Tij)(xTij+1,0,2) += tij[3];
+			(*Tij)(xTij+2,0,1) += tij[1];
+#endif
 		}
 	}  
 }
@@ -1334,8 +1653,6 @@ void projection_Ti0_project(Particles<part, part_info, part_dataType> * pcls, Fi
 	Site xPart(pcls->lattice());
 	Site xField(Ti0->lattice());
 
-	typename std::list<part>::iterator it;
-
 	Real referPos[3];
 	Real weightScalarGridUp[3];
 	Real weightScalarGridDown[3];
@@ -1358,7 +1675,7 @@ void projection_Ti0_project(Particles<part, part_info, part_dataType> * pcls, Fi
 
 	for (xPart.first(), xField.first(); xPart.test(); xPart.next(), xField.next())
 	{
-		if (pcls->field()(xPart).size != 0)
+		if (!pcls->field()(xPart).parts.empty())
 		{
 			for(int i = 0; i < 3; i++) referPos[i] = xPart.coord(i)*dx;
 			for(int i = 0; i < 24; i++) localCube[i] = 0.0;
@@ -1386,7 +1703,7 @@ void projection_Ti0_project(Particles<part, part_info, part_dataType> * pcls, Fi
 				localCubeChi[7] = (*chi)(xField+0+1+2);
 			}
 
-			for (it = (pcls->field())(xPart).parts.begin(); it != (pcls->field())(xPart).parts.end(); ++it)
+			for (auto it = (pcls->field())(xPart).parts.begin(); it != (pcls->field())(xPart).parts.end(); ++it)
 			{
 				for (int i = 0; i < 3; i++)
 				{

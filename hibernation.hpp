@@ -4,9 +4,9 @@
 // 
 // Auxiliary functions for hibernation
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: February 2019
+// Last modified: August 2024
 //
 //////////////////////////
 
@@ -263,13 +263,13 @@ void writeRestartSettings(metadata & sim, icsettings & ic, cosmology & cosmo, co
 			if(sim.out_snapshot & MASK_PCLS)
 			{
 				fprintf(outfile, "particles");
-				if ((sim.out_snapshot & MASK_MULTI == 0 && sim.out_snapshot > MASK_DELTA) || sim.out_snapshot - MASK_MULTI > MASK_DELTA)
+				if (((sim.out_snapshot & MASK_MULTI) == 0 && sim.out_snapshot > MASK_DELTA) || sim.out_snapshot - MASK_MULTI > MASK_DELTA)
 					fprintf(outfile, ", ");
 			}
 			if(sim.out_snapshot & MASK_DELTA)
 			{
 				fprintf(outfile, "delta");
-				if ((sim.out_snapshot & MASK_MULTI == 0 && sim.out_snapshot > MASK_DBARE) || sim.out_snapshot - MASK_MULTI > MASK_DBARE)
+				if (((sim.out_snapshot & MASK_MULTI) == 0 && sim.out_snapshot > MASK_DBARE) || sim.out_snapshot - MASK_MULTI > MASK_DBARE)
 					fprintf(outfile, ", ");
 			}
 			if(sim.out_snapshot & MASK_DBARE)
@@ -450,7 +450,7 @@ void writeRestartSettings(metadata & sim, icsettings & ic, cosmology & cosmo, co
 				fprintf(outfile, "\n");
 				if (sim.lightcone[0].opening > -1.)
 					fprintf(outfile, "lightcone %d opening half-angle = %lg\n", i, acos(sim.lightcone[0].opening) * 180. / M_PI);
-					fprintf(outfile, "lightcone %d distance  = %lg, %lg\n", i, sim.lightcone[0].distance[1], sim.lightcone[0].distance[0]);
+				fprintf(outfile, "lightcone %d distance  = %lg, %lg\n", i, sim.lightcone[0].distance[1], sim.lightcone[0].distance[0]);
 				if (sim.lightcone[0].z != 0)
 					fprintf(outfile, "lightcone %d redshift  = %lg\n", i, sim.lightcone[0].z);
 				fprintf(outfile, "lightcone %d direction = %.15le, %.15le, %.15le\n", i, sim.lightcone[0].direction[0], sim.lightcone[0].direction[1], sim.lightcone[0].direction[2]);
@@ -512,7 +512,7 @@ void writeRestartSettings(metadata & sim, icsettings & ic, cosmology & cosmo, co
 void hibernate(metadata & sim, icsettings & ic, cosmology & cosmo, Particles<part_simple,part_simple_info,part_simple_dataType> * pcls_cdm, Particles<part_simple,part_simple_info,part_simple_dataType> * pcls_b, Particles<part_simple,part_simple_info,part_simple_dataType> * pcls_ncdm, Field<Real> & phi, Field<Real> & chi, Field<Real> & Bi, const double a, const double tau, const double dtau, const int cycle, const int restartcount = -1)
 {
 	string h5filename;
-	char buffer[5];
+	char buffer[16];
 	int i;
 	Site x(Bi.lattice());
 

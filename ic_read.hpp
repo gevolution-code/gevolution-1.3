@@ -4,9 +4,9 @@
 // 
 // read initial conditions from disk
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2019
+// Last modified: August 2024
 //
 //////////////////////////
 
@@ -69,8 +69,8 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 	int i, p, c;
 	char * ext;
 	char line[PARAM_MAX_LINESIZE];
-	FILE * bgfile;
-	FILE * lcfile;
+	FILE * bgfile = NULL;
+	FILE * lcfile = NULL;
 	struct fileDsc fd;
 	gadget2_header hdr;
 	long * numpcl;
@@ -551,7 +551,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 					{
 						for (xPart.first(); xPart.test(); xPart.next())
 						{
-							for (std::list<part_simple>::iterator it = (pcls_cdm->field())(xPart).parts.begin(); it != (pcls_cdm->field())(xPart).parts.end(); ++it)
+							for (auto it = (pcls_cdm->field())(xPart).parts.begin(); it != (pcls_cdm->field())(xPart).parts.end(); ++it)
 								IDlookup.insert((*it).ID);
 						}
 					}
@@ -559,7 +559,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 					{
 						for (xPart.first(); xPart.test(); xPart.next())
 						{
-							for (std::list<part_simple>::iterator it = (pcls_b->field())(xPart).parts.begin(); it != (pcls_b->field())(xPart).parts.end(); ++it)
+							for (auto it = (pcls_b->field())(xPart).parts.begin(); it != (pcls_b->field())(xPart).parts.end(); ++it)
 								IDlookup.insert((*it).ID);
 						}
 					}
@@ -567,7 +567,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 					{
 						for (xPart.first(); xPart.test(); xPart.next())
 						{
-							for (std::list<part_simple>::iterator it = (pcls_ncdm[p-1-sim.baryon_flag].field())(xPart).parts.begin(); it != (pcls_ncdm[p-1-sim.baryon_flag].field())(xPart).parts.end(); ++it)
+							for (auto it = (pcls_ncdm[p-1-sim.baryon_flag].field())(xPart).parts.begin(); it != (pcls_ncdm[p-1-sim.baryon_flag].field())(xPart).parts.end(); ++it)
 								IDlookup.insert((*it).ID);
 						}
 					}
@@ -642,7 +642,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 						}
 						else
 						{
-							if (parallel.isRoot() && fread(IDbuffer, 1, count * GADGET_ID_BYTES, lcfile) != count * GADGET_ID_BYTES)
+							if (parallel.isRoot() && (long) fread(IDbuffer, 1, count * GADGET_ID_BYTES, lcfile) != count * GADGET_ID_BYTES)
 							{
 								COUT << COLORTEXT_RED << " /!\\ error" << COLORTEXT_RESET << ": unable to read particle ID block from " << line << endl;
 								parallel.abortForce();

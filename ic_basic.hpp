@@ -4,9 +4,9 @@
 // 
 // basic initial condition generator for gevolution
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: November 2019
+// Last modified: August 2024
 //
 //////////////////////////
 
@@ -194,8 +194,8 @@ void loadHomogeneousTemplate(const char * filename, long & numpart, float * & pa
 
 	if (parallel.grid_rank()[0] == 0) // read file
 	{
-		FILE * templatefile;
-		int blocksize1, blocksize2, num_read;
+		FILE * templatefile = NULL;
+		int blocksize1 = 0, blocksize2 = 0, num_read = 0;
 		gadget2_header filehdr;
 		
 		templatefile = fopen(filename, "r");
@@ -206,16 +206,19 @@ void loadHomogeneousTemplate(const char * filename, long & numpart, float * & pa
 			parallel.abortForce();
 		}
 		
-		fread(&blocksize1, sizeof(int), 1, templatefile);
-		if (blocksize1 != sizeof(filehdr))
+		if (fread(&blocksize1, sizeof(int), 1, templatefile) != 1 || blocksize1 != sizeof(filehdr))
 		{
 			cerr << " proc#" << parallel.rank() << ": error in loadHomogeneousTemplate! Unknown template file format - header not recognized." << endl;
 			fclose(templatefile);
 			parallel.abortForce();
-		}		
-		fread(&filehdr, sizeof(filehdr), 1, templatefile);
-		fread(&blocksize2, sizeof(int), 1, templatefile);
-		if (blocksize1 != blocksize2)
+		}
+		if (fread(&filehdr, sizeof(filehdr), 1, templatefile) != 1)
+		{
+			cerr << " proc#" << parallel.rank() << ": error in loadHomogeneousTemplate! Unable to read header." << endl;
+			fclose(templatefile);
+			parallel.abortForce();
+		}
+		if (fread(&blocksize2, sizeof(int), 1, templatefile) != 1 || blocksize1 != blocksize2)
 		{
 			cerr << " proc#" << parallel.rank() << ": error in loadHomogeneousTemplate! Unknown template file format - block size mismatch while reading header." << endl;
 			fclose(templatefile);
@@ -250,7 +253,7 @@ void loadHomogeneousTemplate(const char * filename, long & numpart, float * & pa
 			parallel.abortForce();
 		}
 		
-		fread(&blocksize1, sizeof(int), 1, templatefile);
+		num_read = fread(&blocksize1, sizeof(int), 1, templatefile);
 		if (filehdr.npart[0] > 0)
 		{
 			if (fseek(templatefile, 3 * sizeof(float) * filehdr.npart[0], SEEK_CUR))
@@ -261,7 +264,7 @@ void loadHomogeneousTemplate(const char * filename, long & numpart, float * & pa
 			}
 		}
 		num_read = fread(partdata, sizeof(float), 3 * filehdr.npart[1], templatefile);
-		if (num_read != 3 * filehdr.npart[1])
+		if (num_read != (int) (3 * filehdr.npart[1]))
 		{
 			cerr << " proc#" << parallel.rank() << ": error in loadHomogeneousTemplate! Unable to read particle data." << endl;
 			fclose(templatefile);
@@ -278,9 +281,8 @@ void loadHomogeneousTemplate(const char * filename, long & numpart, float * & pa
 				}
 			}
 		}
-		fread(&blocksize2, sizeof(int), 1, templatefile);
-		if (blocksize1 != blocksize2)
-			{
+		if (fread(&blocksize2, sizeof(int), 1, templatefile) != 1 || blocksize1 != blocksize2)
+		{
 			cerr << " proc#" << parallel.rank() << ": error in loadHomogeneousTemplate! Unknown template file format - block size mismatch while reading particles." << endl;
 			fclose(templatefile);
 			parallel.abortForce();
@@ -289,7 +291,7 @@ void loadHomogeneousTemplate(const char * filename, long & numpart, float * & pa
 		fclose(templatefile);
 		
 		// reformat and check particle data
-		for (i = 0; i < 3 * filehdr.npart[1]; i++)
+		for (i = 0; i < (int) (3 * filehdr.npart[1]); i++)
 		{
 			partdata[i] /= filehdr.BoxSize;
 			if (partdata[i] < 0. || partdata[i] > 1.)
@@ -364,8 +366,7 @@ void loadPowerSpectrum(const char * filename, gsl_spline * & pkspline, const dou
 		
 		while (!feof(pkfile) && !ferror(pkfile))
 		{
-			fgets(line, MAX_LINESIZE, pkfile);
-			if (line[MAX_LINESIZE-1] != 0)
+			if (fgets(line, MAX_LINESIZE, pkfile) != NULL && line[MAX_LINESIZE-1] != 0)
 			{
 				cerr << " proc#" << parallel.rank() << ": error in loadPowerSpectrum! Character limit (" << (MAX_LINESIZE-1) << "/line) exceeded in file " << filename << "." << endl;
 				fclose(pkfile);
@@ -396,9 +397,7 @@ void loadPowerSpectrum(const char * filename, gsl_spline * & pkspline, const dou
 		
 		while (!feof(pkfile) && !ferror(pkfile))
 		{
-			fgets(line, MAX_LINESIZE, pkfile);
-			
-			if (sscanf(line, " %lf %lf", &dummy1, &dummy2) == 2 && !feof(pkfile) && !ferror(pkfile))
+			if (fgets(line, MAX_LINESIZE, pkfile) != NULL && sscanf(line, " %lf %lf", &dummy1, &dummy2) == 2 && !feof(pkfile) && !ferror(pkfile))
 			{
 				if (dummy1 < 0. || dummy2 < 0.)
 				{
@@ -491,7 +490,7 @@ void loadPowerSpectrum(const char * filename, gsl_spline * & pkspline, const dou
 // 
 //////////////////////////
 
-void loadTransferFunctions(const char * filename, gsl_spline * & tk_delta, gsl_spline * & tk_theta, const char * qname, const double boxsize, const double h)
+void loadTransferFunctions(const char * filename, gsl_spline * & tk_delta, gsl_spline * & tk_theta, const char * qname, const double boxsize, double h)
 {
 	int i = 0, numpoints = 0;
 	double * k;
@@ -505,7 +504,57 @@ void loadTransferFunctions(const char * filename, gsl_spline * & tk_delta, gsl_s
 		char format[MAX_LINESIZE];
 		char * ptr;
 		double dummy[3];
+		char dname[16];
+		char tname[16];
+		char kname[16];
 		int kcol = -1, dcol = -1, tcol = -1, colmax;
+		
+		if (qname != NULL)
+		{
+			if (strcmp(qname, "vx") == 0)
+			{
+				sprintf(dname, "vx_smg");
+				sprintf(tname, "vx_prime_smg");
+				h = 1.;
+			}
+			else if (strcmp(qname, "eta") == 0)
+			{
+				sprintf(dname, "eta");
+				sprintf(tname, "eta_prime");
+				h /= boxsize;
+			}
+			else if (strcmp(qname, "h") == 0)
+			{
+				sprintf(dname, "h");
+				sprintf(tname, "h_prime");
+				h /= boxsize;
+			}
+			else if (strcmp(qname, "Nb") == 0)
+			{
+				sprintf(dname, "H_T_Nb_prime");
+				sprintf(tname, "k2gamma_Nb");
+				h = 1.;
+			}
+			else if (strcmp(qname, "d_m") == 0)
+			{
+				sprintf(dname, "d_cdm");
+				sprintf(tname, "d_b");
+				h = 1.;
+			}
+			else
+			{
+				sprintf(dname, "d_%s", qname);
+				sprintf(tname, "t_%s", qname);
+				h /= boxsize;
+			}
+    	}
+		else
+		{
+			sprintf(dname, "phi");
+			sprintf(tname, "psi");
+			h = 1.;
+		}
+		sprintf(kname, "k (h/Mpc)");
 		
 		line[MAX_LINESIZE-1] = 0;
 		
@@ -519,8 +568,7 @@ void loadTransferFunctions(const char * filename, gsl_spline * & tk_delta, gsl_s
 		
 		while (!feof(tkfile) && !ferror(tkfile))
 		{
-			fgets(line, MAX_LINESIZE, tkfile);
-			if (line[MAX_LINESIZE-1] != 0)
+			if (fgets(line, MAX_LINESIZE, tkfile) != NULL && line[MAX_LINESIZE-1] != 0)
 			{
 				cerr << " proc#" << parallel.rank() << ": error in loadTransferFunctions! Character limit (" << (MAX_LINESIZE-1) << "/line) exceeded in file " << filename << "." << endl;
 				fclose(tkfile);
@@ -552,19 +600,14 @@ void loadTransferFunctions(const char * filename, gsl_spline * & tk_delta, gsl_s
 		
 		while (!feof(tkfile) && !ferror(tkfile))
 		{
-			fgets(line, MAX_LINESIZE, tkfile);
+			if (fgets(line, MAX_LINESIZE, tkfile) == NULL) break;
+
 			for (ptr = line, i = 0; (ptr = strchr(ptr, ':')) != NULL; i++)
 			{
 				ptr++;
-				if (*ptr == 'k') kcol = i;
-				else if (*ptr == 'd')
-				{
-					if (strncmp(ptr+2, qname, strlen(qname)) == 0) dcol = i;
-				}
-				else if (*ptr == 't')
-				{
-					if (strncmp(ptr+2, qname, strlen(qname)) == 0) tcol = i;
-				}
+				if (strncmp(ptr, kname, strlen(kname)+1) == 0) kcol = i;
+				else if (strncmp(ptr, tname, strlen(tname)+1) == 0) tcol = i;
+				else if (strncmp(ptr, dname, strlen(dname)+1) == 0) dcol = i;
 			}
 			
 			if (kcol >= 0 && dcol >= 0 && tcol >= 0) break;
@@ -572,7 +615,7 @@ void loadTransferFunctions(const char * filename, gsl_spline * & tk_delta, gsl_s
 		
 		if (kcol < 0 || dcol < 0 || tcol < 0)
 		{
-			cerr << " proc#" << parallel.rank() << ": error in loadTransferFunctions! Unable to identify requested columns!" << endl;
+			cerr << " proc#" << parallel.rank() << ": error in loadTransferFunctions! Unable to identify requested columns! (" << kname << ": " << kcol << ", " << dname << ": " << dcol << ", " << tname << ": " << tcol << ")" << endl;
 			fclose(tkfile);
 			free(k);
 			free(tk_d);
@@ -633,7 +676,7 @@ void loadTransferFunctions(const char * filename, gsl_spline * & tk_delta, gsl_s
 		i = 0;
 		while (!feof(tkfile) && !ferror(tkfile))
 		{
-			fgets(line, MAX_LINESIZE, tkfile);
+			if (fgets(line, MAX_LINESIZE, tkfile) == NULL) break;
 			
 			if (sscanf(line, format, dummy, dummy+1, dummy+2) == 3 && !feof(tkfile) && !ferror(tkfile))
 			{
@@ -662,7 +705,7 @@ void loadTransferFunctions(const char * filename, gsl_spline * & tk_delta, gsl_s
 				
 				k[i] = dummy[kcol] * boxsize;
 				tk_d[i] = dummy[dcol];
-				tk_t[i] = dummy[tcol] * boxsize / h;
+				tk_t[i] = dummy[tcol] / h;
 				i++;
 			}
 		}
@@ -678,11 +721,11 @@ void loadTransferFunctions(const char * filename, gsl_spline * & tk_delta, gsl_s
 			parallel.abortForce();
 		}
 		
-		parallel.broadcast_dim0<int>(numpoints, 0);
+		parallel.broadcast<int>(numpoints, 0);
 	}
 	else
 	{
-		parallel.broadcast_dim0<int>(numpoints, 0);
+		parallel.broadcast<int>(numpoints, 0);
 		
 		if (numpoints < 2)
 		{
@@ -739,7 +782,7 @@ void generateCICKernel(Field<Real> & ker, const long numpcl = 0, float * pcldata
 	const long linesize = ker.lattice().sizeLocal(0);
 	Real renorm = linesize * linesize;
 	long i, oct, sx, sy, sz;
-	float wx, wy, wz, q1, q2, q3, q4, ww;
+	float wx, wy, wz, q1, ww;
 	Site x(ker.lattice());
 	
 	for (x.first(); x.test(); x.next())
@@ -1094,7 +1137,6 @@ void generateDisplacementField(Field<Cplx> & potFT, const Real coeff, const gsl_
 	rKSite k(potFT.lattice());
 	int kx, ky, kz, i, j;
 	int kymin, kymax, kzmin, kzmax;
-	long jumpy, jumpz;
 	float r1, r2, k2, s;
 	float * sinc;
 	sitmo::prng_engine prng;
@@ -1460,8 +1502,7 @@ void initializeParticlePositions(const long numpart, const float * partdata, con
 double applyMomentumDistribution(Particles<part_simple,part_simple_info,part_simple_dataType> * pcls, unsigned int seed, float T_m = 0., Field<Real> * delta = NULL)
 {	
 	Site xPart(pcls->lattice());
-	Site x;	
-	std::list<part_simple>::iterator it;
+	Site x;
 	sitmo::prng_engine prng;
 	float r1, r2, q, dT;
 	double l, dummy, d[3];
@@ -1528,54 +1569,51 @@ double applyMomentumDistribution(Particles<part_simple,part_simple_info,part_sim
 	                    
 	for (xPart.first(); xPart.test(); xPart.next())
 	{
-		if (pcls->field()(xPart).size != 0)
+		for (auto it=(pcls->field())(xPart).parts.begin(); it != (pcls->field())(xPart).parts.end(); ++it)
 		{
-			for (it=(pcls->field())(xPart).parts.begin(); it != (pcls->field())(xPart).parts.end(); ++it)
+			prng.seed(seed);
+			prng.discard((uint64_t) (7l * (*it).ID));
+				
+			while (true)
 			{
-				prng.seed(seed);
-				prng.discard((uint64_t) (7l * (*it).ID));
-				
-				while (true)
-				{
-					r = prng();
-					i = r % 64;
-					r /= 64;
+				r = prng();
+				i = r % 64;
+				r /= 64;
 					
-					q = ql[i] + 64.0f * (qr[i]-ql[i]) * ((float) r / (float) sitmo::prng_engine::max());
+				q = ql[i] + 64.0f * (qr[i]-ql[i]) * ((float) r / (float) sitmo::prng_engine::max());
 					
-					if (q > ql[i+1] && q < qr[i+1]) break;
+				if (q > ql[i+1] && q < qr[i+1]) break;
 					
-					if (f[i] + (f[i+1]-f[i]) * ((float) prng() / (float) sitmo::prng_engine::max()) < q * q / (exp(q) + 1.0f)) break;
-				}
-				
-				r1 = acos(2. * ((float) prng() / (float) sitmo::prng_engine::max()) - 1.);
-				r2 = 2 * M_PI * ((float) prng() / (float) sitmo::prng_engine::max());
-				
-				if (delta != NULL)
-				{
-					for (i = 0; i < 3; i++)
-						d[i] = modf((*it).pos[i] * l, &dummy);
-					
-					dT = (1. - d[0]) * (1. - d[1]) * (1. - d[2]) * (*delta)(x);
-					dT += d[0] * (1. - d[1]) * (1. - d[2]) * (*delta)(x+0);
-					dT += (1. - d[0]) * d[1] * (1. - d[2]) * (*delta)(x+1);
-					dT += d[0] * d[1] * (1. - d[2]) * (*delta)(x+0+1);
-					dT += (1. - d[0]) * (1. - d[1]) * d[2] * (*delta)(x+2);
-					dT += d[0] * (1. - d[1]) * d[2] * (*delta)(x+0+2);
-					dT += (1. - d[0]) * d[1] * d[2] * (*delta)(x+1+2);
-					dT += d[0] * d[1] * d[2] * (*delta)(x+2);
-					
-					q *= T_m * (1. + dT);
-				}
-				else
-					q *= T_m;
-				
-				(*it).vel[0] += cos(r2) * sin(r1) * q;
-				(*it).vel[1] += sin(r2) * sin(r1) * q;
-				(*it).vel[2] += cos(r1) * q;
-				
-				sum_q += q;
+				if (f[i] + (f[i+1]-f[i]) * ((float) prng() / (float) sitmo::prng_engine::max()) < q * q / (exp(q) + 1.0f)) break;
 			}
+				
+			r1 = acos(2. * ((float) prng() / (float) sitmo::prng_engine::max()) - 1.);
+			r2 = 2 * M_PI * ((float) prng() / (float) sitmo::prng_engine::max());
+				
+			if (delta != NULL)
+			{
+				for (i = 0; i < 3; i++)
+					d[i] = modf((*it).pos[i] * l, &dummy);
+					
+				dT = (1. - d[0]) * (1. - d[1]) * (1. - d[2]) * (*delta)(x);
+				dT += d[0] * (1. - d[1]) * (1. - d[2]) * (*delta)(x+0);
+				dT += (1. - d[0]) * d[1] * (1. - d[2]) * (*delta)(x+1);
+				dT += d[0] * d[1] * (1. - d[2]) * (*delta)(x+0+1);
+				dT += (1. - d[0]) * (1. - d[1]) * d[2] * (*delta)(x+2);
+				dT += d[0] * (1. - d[1]) * d[2] * (*delta)(x+0+2);
+				dT += (1. - d[0]) * d[1] * d[2] * (*delta)(x+1+2);
+				dT += d[0] * d[1] * d[2] * (*delta)(x+2);
+					
+				q *= T_m * (1. + dT);
+			}
+			else
+				q *= T_m;
+				
+			(*it).vel[0] += cos(r2) * sin(r1) * q;
+			(*it).vel[1] += sin(r2) * sin(r1) * q;
+			(*it).vel[2] += cos(r1) * q;
+			
+			sum_q += q;
 		}
 		
 		if (delta != NULL) x.next();
@@ -1616,6 +1654,8 @@ double applyMomentumDistribution(Particles<part_simple,part_simple_info,part_sim
 //   plan_Bi        pointer to FFT planner
 //   plan_source    pointer to FFT planner
 //   plan_Sij       pointer to FFT planner
+//   class_background  reference to CLASS background structure
+//   class_perturbs    reference to CLASS perturbation structure
 //   params         pointer to array of precision settings for CLASS (can be NULL)
 //   numparam       number of precision settings for CLASS (can be 0)
 //
@@ -1623,14 +1663,18 @@ double applyMomentumDistribution(Particles<part_simple,part_simple_info,part_sim
 // 
 //////////////////////////
 
-void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const double fourpiG, Particles<part_simple,part_simple_info,part_simple_dataType> * pcls_cdm, Particles<part_simple,part_simple_info,part_simple_dataType> * pcls_b, Particles<part_simple,part_simple_info,part_simple_dataType> * pcls_ncdm, double * maxvel, Field<Real> * phi, Field<Real> * chi, Field<Real> * Bi, Field<Real> * source, Field<Real> * Sij, Field<Cplx> * scalarFT, Field<Cplx> * BiFT, Field<Cplx> * SijFT, PlanFFT<Cplx> * plan_phi, PlanFFT<Cplx> * plan_chi, PlanFFT<Cplx> * plan_Bi, PlanFFT<Cplx> * plan_source, PlanFFT<Cplx> * plan_Sij, parameter * params, int & numparam)
+void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const double fourpiG, Particles<part_simple,part_simple_info,part_simple_dataType> * pcls_cdm, Particles<part_simple,part_simple_info,part_simple_dataType> * pcls_b, Particles<part_simple,part_simple_info,part_simple_dataType> * pcls_ncdm, double * maxvel, Field<Real> * phi, Field<Real> * chi, Field<Real> * Bi, Field<Real> * source, Field<Real> * Sij, Field<Cplx> * scalarFT, Field<Cplx> * BiFT, Field<Cplx> * SijFT, PlanFFT<Cplx> * plan_phi, PlanFFT<Cplx> * plan_chi, PlanFFT<Cplx> * plan_Bi, PlanFFT<Cplx> * plan_source, PlanFFT<Cplx> * plan_Sij,
+#ifdef HAVE_CLASS
+background & class_background, perturbs & class_perturbs,
+#endif
+parameter * params, int & numparam)
 {
-	int i, j, p;
+	int i, p;
 	double a = 1. / (1. + sim.z_in);
 	float * pcldata = NULL;
 	gsl_spline * pkspline = NULL;
-	gsl_spline * nbspline = NULL;
-	gsl_spline * vnbspline = NULL;
+	gsl_spline * dgaugespline = NULL;
+	gsl_spline * vgaugespline = NULL;
 	gsl_spline * tk_d1 = NULL;
 	gsl_spline * tk_d2 = NULL;
 	gsl_spline * tk_t1 = NULL;
@@ -1649,16 +1693,14 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 	part_simple_info pcls_ncdm_info[MAX_PCL_SPECIES];
 	part_simple_dataType pcls_ncdm_dataType;
 	Real boxSize[3] = {1.,1.,1.};
-	char ncdm_name[8];
+	char ncdm_name[24];
 	Field<Real> * ic_fields[2];
 	
 	ic_fields[0] = chi;
 	ic_fields[1] = phi;
 
 #ifdef HAVE_CLASS
-  	background class_background;
-  	thermo class_thermo;
-  	perturbs class_perturbs;
+	gsl_interp_accel * acc = gsl_interp_accel_alloc();
 #endif
 	
 	loadHomogeneousTemplate(ic.pclfile[0], sim.numpcl[0], pcldata);
@@ -1689,7 +1731,7 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 		temp1 = (double *) malloc(pkspline->size * sizeof(double));
 		temp2 = (double *) malloc(pkspline->size * sizeof(double));
 		
-		for (i = 0; i < pkspline->size; i++)
+		for (i = 0; i < (int) pkspline->size; i++)
 		{
 			temp1[i] = pkspline->x[i];
 			temp2[i] = pkspline->y[i] / sim.boxsize / sim.boxsize;
@@ -1703,14 +1745,16 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 	else					// initial displacements and velocities are set by individual transfer functions
 	{
 #ifdef HAVE_CLASS
+		initializeCLASSstructures(sim, ic, cosmo, class_background, class_perturbs, params, numparam);
+
+		loadBGFunctions(class_background, cosmo.Hspline, "H [1/Mpc]", 1.05 * sim.z_in + 0.05, sim.boxsize/cosmo.h);
+		cosmo.acc_H = gsl_interp_accel_alloc();
+
 		if (ic.tkfile[0] == '\0')
-		{
-			initializeCLASSstructures(sim, ic, cosmo, class_background, class_thermo, class_perturbs, params, numparam);
-			loadTransferFunctions(class_background, class_perturbs, tk_d1, tk_t1, "tot", sim.boxsize, sim.z_in, cosmo.h);
-		}
+			loadTransferFunctions(class_background, class_perturbs, tk_d1, tk_t1, NULL, sim.boxsize, sim.z_in, cosmo.h);
 		else
 #endif
-		loadTransferFunctions(ic.tkfile, tk_d1, tk_t1, "tot", sim.boxsize, cosmo.h);
+		loadTransferFunctions(ic.tkfile, tk_d1, tk_t1, NULL, sim.boxsize, cosmo.h);
 		
 		if (tk_d1 == NULL || tk_t1 == NULL)
 		{
@@ -1721,66 +1765,111 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 		temp1 = (double *) malloc(tk_d1->size * sizeof(double));
 		temp2 = (double *) malloc(tk_d1->size * sizeof(double));
 		
-		rescale = 3. * Hconf(a, fourpiG, cosmo) * Hconf(a, fourpiG, cosmo) * Hconf(a, fourpiG, cosmo) * (1. + 0.5 * Hconf(a, fourpiG, cosmo) * Hconf(a, fourpiG, cosmo) * ((1. / Hconf(0.98 * a, fourpiG, cosmo) / Hconf(0.98 * a, fourpiG, cosmo)) - (8. / Hconf(0.99 * a, fourpiG, cosmo) / Hconf(0.99 * a, fourpiG, cosmo)) + (8. / Hconf(1.01 * a, fourpiG, cosmo) / Hconf(1.01 * a, fourpiG, cosmo)) - (1. / Hconf(1.02 * a, fourpiG, cosmo) / Hconf(1.02 * a, fourpiG, cosmo))) / 0.12);
 		for (i = 0; i < tk_d1->size; i++) // construct phi
-			temp1[i] = (1.5 * (Hconf(a, fourpiG, cosmo) * Hconf(a, fourpiG, cosmo) - Hconf(1., fourpiG, cosmo) * Hconf(1., fourpiG, cosmo) * a * a * cosmo.Omega_Lambda) * tk_d1->y[i] + rescale * tk_t1->y[i] / tk_d1->x[i] / tk_d1->x[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+			temp1[i] = -M_PI * tk_d1->y[i] * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) * tk_d1->x[i];
 
-		if (sim.gr_flag == 0)
-		{
-			for (i = 0; i < tk_t1->size; i++) // construct gauge correction for N-body gauge (3 Hconf theta_tot / k^2)
-				temp2[i] = -3. * Hconf(a, fourpiG, cosmo)  * M_PI * tk_t1->y[i] * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i] / tk_d1->x[i] / tk_d1->x[i];
-
-			nbspline = gsl_spline_alloc(gsl_interp_cspline, tk_t1->size);
-			gsl_spline_init(nbspline, tk_t1->x, temp2, tk_t1->size);
-		}
-		
 		pkspline = gsl_spline_alloc(gsl_interp_cspline, tk_d1->size);
 		gsl_spline_init(pkspline, tk_d1->x, temp1, tk_d1->size);
+				
+#ifdef HAVE_CLASS
+		if (ic.tkfile[0] == '\0')
+		{
+			loadTransferFunctions(class_background, class_perturbs, tk_d2, tk_t2, "eta", sim.boxsize, sim.z_in, cosmo.h);
+			rescale = -gsl_spline_eval_deriv(cosmo.Hspline, a, cosmo.acc_H) * a * a;
+		}
+		else
+#endif
+		{
+			loadTransferFunctions(ic.tkfile, tk_d2, tk_t2, "eta", sim.boxsize, cosmo.h);
+				
+			if (tk_d2 == NULL || tk_t2 == NULL)
+			{
+				COUT << " error: transfer functions were empty!" << endl;
+				parallel.abortForce();
+			}
+				
+			rescale = (Hconf(a, fourpiG, cosmo) - 100. * (Hconf(1.005 * a, fourpiG, cosmo) - Hconf(0.995 * a, fourpiG, cosmo))) * a * a;
+		}
+
+		if (sim.gr_flag == 0)
+		{	
+			for (i = 0; i < tk_t2->size; i++) // construct gauge correction for N-body gauge (3 Hconf theta_tot / k^2 = 3 Hconf eta' / (Hconf^2 - Hconf'))
+				temp2[i] = 3. * tk_t2->y[i] / rescale;
+		}
+		else
+		{
+			for (i = 0; i < tk_t2->size; i++) // construct gauge correction for Poisson gauge (3 phi - 3 eta)
+				temp2[i] = 3. * tk_d1->y[i] - 3. * tk_d2->y[i];
+		}
+
+		dgaugespline = gsl_spline_alloc(gsl_interp_cspline, tk_t2->size);
+		gsl_spline_init(dgaugespline, tk_t2->x, temp2, tk_t2->size);
+
 		gsl_spline_free(tk_d1);
 		gsl_spline_free(tk_t1);
 
 #ifdef HAVE_CLASS
 		if (ic.tkfile[0] == '\0')
-		{
+		{	
 			if (sim.gr_flag == 0)
 			{
-				loadTransferFunctions(class_background, class_perturbs, tk_d1, tk_t1, NULL, sim.boxsize, sim.z_in, cosmo.h);
-
-				for (i = 0; i < tk_d1->size; i++)
-					temp1[i] = -tk_d1->y[i];
-
-				gsl_spline_free(tk_d1);
-				gsl_spline_free(tk_t1);
-
-				loadTransferFunctions(class_background, class_perturbs, tk_d1, tk_t1, NULL, sim.boxsize, (sim.z_in + 0.01) / 0.99, cosmo.h);
-
-				for (i = 0; i < tk_d1->size; i++)
-					temp1[i] += tk_d1->y[i];
-
-				gsl_spline_free(tk_d1);
-				gsl_spline_free(tk_t1);
-
-				loadTransferFunctions(class_background, class_perturbs, tk_d1, tk_t1, "tot", sim.boxsize, (sim.z_in + 0.01) / 0.99, cosmo.h);
-
-				for (i = 0; i < tk_d1->size; i++) // construct gauge correction for N-body gauge velocities
-					temp1[i] = -99.5 * Hconf(0.995 * a, fourpiG, cosmo) * (3. * temp1[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i] + (temp2[i] + 3. * Hconf(0.99 * a, fourpiG, cosmo)  * M_PI * tk_t1->y[i] * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i] / tk_d1->x[i] / tk_d1->x[i]));
-
-				vnbspline = gsl_spline_alloc(gsl_interp_cspline, tk_t1->size);
-				gsl_spline_init(vnbspline, tk_t1->x, temp1, tk_t1->size);
+				loadTransferFunctions(class_background, class_perturbs, tk_d1, tk_t1, "eta", sim.boxsize, 1./1.01/a - 1., cosmo.h);
+				rescale = -gsl_spline_eval_deriv(cosmo.Hspline, 1.01*a, cosmo.acc_H) * a * a * 1.0201;
+				for (i = 0; i < tk_t1->size; i++)
+					temp1[i] = (temp2[i] - 3. * tk_t1->y[i] / rescale) * 100. * Hconf(1.005 * a, fourpiG, cosmo);
 
 				gsl_spline_free(tk_d1);
 				gsl_spline_free(tk_t1);
 			}
+			loadTransferFunctions(class_background, class_perturbs, tk_d1, tk_t1, "h", sim.boxsize, sim.z_in, cosmo.h);
 
-			loadTransferFunctions(class_background, class_perturbs, tk_d1, tk_t1, "cdm", sim.boxsize, sim.z_in, cosmo.h);
+			for (i = 0; i < tk_t1->size; i++)
+					temp1[i] += tk_t1->y[i] * 0.5;
 		}
 		else
+#endif
+		{
+			loadTransferFunctions(ic.tkfile, tk_d1, tk_t1, "h", sim.boxsize, cosmo.h);
+			
+			if (tk_d1 == NULL || tk_t1 == NULL)
+			{
+				COUT << " error: transfer functions were empty!" << endl;
+				parallel.abortForce();
+			}
+
+			for (i = 0; i < tk_t1->size; i++)
+					temp1[i] = tk_t1->y[i] * 0.5;
+		}
+
+		gsl_spline_free(tk_d1);
+		gsl_spline_free(tk_t1);
+
+		if (sim.gr_flag > 0)
+		{
+			for (i = 0; i < tk_t2->size; i++)
+				temp1[i] += 3. * tk_t2->y[i];
+		}
+		else if (ic.tkfile[0] != '\0')
+		{
+			COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": gauge correction for N-body gauge velocities cannot be computed accurately from the transfer functions at a single redshift!" << endl;
+		}
+
+		vgaugespline = gsl_spline_alloc(gsl_interp_cspline, tk_t2->size);
+		gsl_spline_init(vgaugespline, tk_t2->x, temp1, tk_t2->size);
+
+		gsl_spline_free(tk_d2);
+		gsl_spline_free(tk_t2);
+
+#ifdef HAVE_CLASS
+		if (ic.tkfile[0] == '\0')
+			loadTransferFunctions(class_background, class_perturbs, tk_d1, tk_t1, "d_m", sim.boxsize, sim.z_in, cosmo.h);
+		else
 #endif		
-		loadTransferFunctions(ic.tkfile, tk_d1, tk_t1, "cdm", sim.boxsize, cosmo.h);	// get transfer functions for CDM
+		loadTransferFunctions(ic.tkfile, tk_d1, tk_t1, "d_m", sim.boxsize, cosmo.h);	// get transfer functions for CDM
 		
 		if (tk_d1 == NULL || tk_t1 == NULL)
 		{
-			COUT << " error: cdm transfer function was empty!" << endl;
+			COUT << " error: matter transfer function was empty!" << endl;
 			parallel.abortForce();
 		}
 		
@@ -1807,25 +1896,10 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 		
 		if (sim.baryon_flag == 2)	// baryon treatment = blend; compute displacement & velocity from weighted average
 		{
-			if (sim.gr_flag > 0)
+			for (i = 0; i < tk_d1->size; i++)
 			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp1[i] = -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] - ((cosmo.Omega_cdm * tk_d1->y[i] + cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b)) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-			}
-			else
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp1[i] = nbspline->y[i] - ((cosmo.Omega_cdm * tk_d1->y[i] + cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b)) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-			}
-			if (sim.gr_flag > 0 || vnbspline == NULL)
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp2[i] = -a * ((cosmo.Omega_cdm * tk_t1->y[i] + cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b)) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-			}
-			else
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp2[i] = a * vnbspline->y[i] - a * ((cosmo.Omega_cdm * tk_t1->y[i] + cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b)) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - ((cosmo.Omega_cdm * tk_d1->y[i] + cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+					temp2[i] = -a * ((cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + vgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
 			}
 
 			gsl_spline_free(tk_d1);
@@ -1842,27 +1916,12 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 		{
 			if (8. * cosmo.Omega_b / (cosmo.Omega_cdm + cosmo.Omega_b) > 1.)
 			{
-				if (sim.gr_flag > 0)
+				for (i = 0; i < tk_d1->size; i++)
 				{
-					for (i = 0; i < tk_d1->size; i++)
-						temp1[i] = -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] - ((8. * cosmo.Omega_cdm * tk_d1->y[i] + (7. * cosmo.Omega_b - cosmo.Omega_cdm) * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) / 7.) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+						temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - ((8. * cosmo.Omega_cdm * tk_d1->y[i] + (7. * cosmo.Omega_b - cosmo.Omega_cdm) * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) / 7. + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+						temp2[i] = -a * (((7. * cosmo.Omega_b - cosmo.Omega_cdm) * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) / 7. + vgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
 				}
-				else
-				{
-					for (i = 0; i < tk_d1->size; i++)
-						temp1[i] = nbspline->y[i] - ((8. * cosmo.Omega_cdm * tk_d1->y[i] + (7. * cosmo.Omega_b - cosmo.Omega_cdm) * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) / 7.) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-				}
-				if (sim.gr_flag > 0 || vnbspline == NULL)
-				{
-					for (i = 0; i < tk_d1->size; i++)
-						temp2[i] = -a * ((8. * cosmo.Omega_cdm * tk_t1->y[i] + (7. * cosmo.Omega_b - cosmo.Omega_cdm) * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) / 7.) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-				}
-				else
-				{
-					for (i = 0; i < tk_d1->size; i++)
-						temp2[i] = a * vnbspline->y[i] - a * ((8. * cosmo.Omega_cdm * tk_t1->y[i] + (7. * cosmo.Omega_b - cosmo.Omega_cdm) * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) / 7.) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-				}
-
+				
 				gsl_spline_free(tk_d1);
 				gsl_spline_free(tk_t1);
 				tk_d1 = gsl_spline_alloc(gsl_interp_cspline, tk_d2->size);
@@ -1872,25 +1931,10 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 			}
 			else
 			{
-				if (sim.gr_flag > 0)
+				for (i = 0; i < tk_d1->size; i++)
 				{
-					for (i = 0; i < tk_d1->size; i++)
-						temp1[i] = -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] - (((cosmo.Omega_cdm - 7. * cosmo.Omega_b) * tk_d1->y[i] + 8. * cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b)) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-				}
-				else
-				{
-					for (i = 0; i < tk_d1->size; i++)
-						temp1[i] = nbspline->y[i] - (((cosmo.Omega_cdm - 7. * cosmo.Omega_b) * tk_d1->y[i] + 8. * cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b)) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-				}
-				if (sim.gr_flag > 0 || vnbspline == NULL)
-				{
-					for (i = 0; i < tk_d1->size; i++)
-						temp2[i] = -a * (((cosmo.Omega_cdm - 7. * cosmo.Omega_b) * tk_t1->y[i] + 8. * cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b)) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-				}
-				else
-				{
-					for (i = 0; i < tk_d1->size; i++)
-						temp2[i] = a * vnbspline->y[i] - a * (((cosmo.Omega_cdm - 7. * cosmo.Omega_b) * tk_t1->y[i] + 8. * cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b)) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - (((cosmo.Omega_cdm - 7. * cosmo.Omega_b) * tk_d1->y[i] + 8. * cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+					temp2[i] = -a * ((8. * cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + vgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
 				}
 
 				gsl_spline_free(tk_d2);
@@ -1904,25 +1948,10 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 		
 		if (sim.baryon_flag == 1 || (sim.baryon_flag == 3 && 8. * cosmo.Omega_b / (cosmo.Omega_cdm + cosmo.Omega_b) > 1.)) // compute baryonic displacement & velocity
 		{
-			if (sim.gr_flag > 0)
+			for (i = 0; i < tk_d1->size; i++)
 			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp1[i] = -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] - tk_d2->y[i] * M_PI * sqrt(Pk_primordial(tk_d2->x[i] * cosmo.h / sim.boxsize, ic) / tk_d2->x[i]) / tk_d2->x[i];
-			}
-			else
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp1[i] = nbspline->y[i] - tk_d2->y[i] * M_PI * sqrt(Pk_primordial(tk_d2->x[i] * cosmo.h / sim.boxsize, ic) / tk_d2->x[i]) / tk_d2->x[i];
-			}
-			if (sim.gr_flag > 0 || vnbspline == NULL)
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp2[i] = -a * tk_t2->y[i] * M_PI * sqrt(Pk_primordial(tk_d2->x[i] * cosmo.h / sim.boxsize, ic) / tk_d2->x[i]) / tk_d2->x[i];
-			}
-			else
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp2[i] = a * vnbspline->y[i] - a * tk_t2->y[i] * M_PI * sqrt(Pk_primordial(tk_d2->x[i] * cosmo.h / sim.boxsize, ic) / tk_d2->x[i]) / tk_d2->x[i];
+					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - (tk_d2->y[i] + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d2->x[i] * cosmo.h / sim.boxsize, ic) / tk_d2->x[i]) / tk_d2->x[i];
+					temp2[i] = -a * (tk_t2->y[i] + vgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d2->x[i] * cosmo.h / sim.boxsize, ic) / tk_d2->x[i]) / tk_d2->x[i];			
 			}
 
 			gsl_spline_free(tk_d2);
@@ -1935,25 +1964,10 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 		
 		if (sim.baryon_flag < 2 || (sim.baryon_flag == 3 && 8. * cosmo.Omega_b / (cosmo.Omega_cdm + cosmo.Omega_b) <= 1.))	// compute CDM displacement & velocity
 		{
-			if (sim.gr_flag > 0)
+			for (i = 0; i < tk_d1->size; i++)
 			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp1[i] = -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] - tk_d1->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-			}
-			else
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp1[i] = nbspline->y[i] - tk_d1->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-			}
-			if (sim.gr_flag > 0 || vnbspline == NULL)
-			{	
-				for (i = 0; i < tk_d1->size; i++)
-					temp2[i] = -a * tk_t1->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-			}
-			else
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp2[i] = a * vnbspline->y[i] - a * tk_t1->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - (tk_d1->y[i] + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+					temp2[i] = -a * vgaugespline->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
 			}
 
 			gsl_spline_free(tk_d1);
@@ -2099,25 +2113,27 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 				parallel.abortForce();
 			}
 			
-			if (sim.gr_flag > 0)
+#ifdef HAVE_CLASS
+			sprintf(ncdm_name, "(.)rho_ncdm[%d]", p);
+			loadBGFunctions(class_background, tk_d2, ncdm_name, 1.05 * sim.z_in + 0.05);
+			sprintf(ncdm_name, "(.)p_ncdm[%d]", p);
+			loadBGFunctions(class_background, tk_t2, ncdm_name, 1.05 * sim.z_in + 0.05);
+			rescale = 1./gsl_spline_eval(tk_d2, a, acc);
+			gsl_interp_accel_reset(acc);
+			rescale *= gsl_spline_eval(tk_t2, a, acc);
+			gsl_interp_accel_reset(acc);
+			rescale += 1.;
+			gsl_spline_free(tk_d2);
+			gsl_spline_free(tk_t2);
+#else
+			rescale = (bg_ncdm(a * 1.005, cosmo, p) - bg_ncdm(a * 0.995, cosmo, p)) * 100. / bg_ncdm(a, cosmo, p);
+			rescale = 1. - rescale / 3.;
+#endif
+			
+			for (i = 0; i < tk_d1->size; i++)
 			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp1[i] = -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] - tk_d1->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-			}
-			else
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp1[i] = nbspline->y[i] - tk_d1->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-			}
-			if (sim.gr_flag > 0 || vnbspline == NULL)
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp2[i] = -a * tk_t1->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
-			}
-			else
-			{
-				for (i = 0; i < tk_d1->size; i++)
-					temp2[i] = a * vnbspline->y[i] - a * tk_t1->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+				temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - (tk_d1->y[i] + dgaugespline->y[i] * rescale) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+				temp2[i] = -a * (tk_t1->y[i] + vgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
 			}
 
 			gsl_spline_free(tk_d1);
@@ -2167,10 +2183,6 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 	{
 		plan_source->execute(FFT_FORWARD);
 		generateDisplacementField(*scalarFT, 0., pkspline, (unsigned int) ic.seed, ic.flags & ICFLAG_KSPHERE, 0);
-#ifdef HAVE_CLASS
-		if (ic.tkfile[0] == '\0')
-			freeCLASSstructures(class_background, class_thermo, class_perturbs);
-#endif
 	}
 	else
 	{
@@ -2252,10 +2264,14 @@ void generateIC_basic(metadata & sim, icsettings & ic, cosmology & cosmo, const 
 	chi->updateHalo();	// chi now finally contains chi
 
 	gsl_spline_free(pkspline);
-	if (sim.gr_flag == 0)
-		gsl_spline_free(nbspline);
-	if (vnbspline != NULL)
-		gsl_spline_free(vnbspline);
+	if (dgaugespline != NULL)
+		gsl_spline_free(dgaugespline);
+	if (vgaugespline != NULL)
+		gsl_spline_free(vgaugespline);
+
+#ifdef HAVE_CLASS
+	gsl_interp_accel_free(acc);
+#endif
 }
 
 #endif

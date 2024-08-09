@@ -6,14 +6,14 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2022
+// Last modified: August 2024
 //
 //////////////////////////
 
 #ifndef METADATA_HEADER
 #define METADATA_HEADER
 
-#define GEVOLUTION_VERSION 1.2
+#define GEVOLUTION_VERSION 1.3
 
 #ifndef GRADIENT_ORDER
 #define GRADIENT_ORDER 1
@@ -83,6 +83,12 @@
 #ifdef ICGEN_SONG
 #undef ICGEN_SONG
 #define ICGEN_SONG                  3
+#define ICGEN_RELIC				    3
+#endif
+#ifdef ICGEN_RELIC
+#undef ICGEN_RELIC
+#define ICGEN_RELIC                 3
+#define ICGEN_SONG				    3
 #endif
 #ifdef ICGEN_FALCONIC
 #undef ICGEN_FALCONIC
@@ -191,6 +197,10 @@ struct healpix_header
 };
 #endif
 
+#ifdef HAVE_CLASS
+#include <gsl/gsl_spline.h>
+#endif
+
 struct lightcone_geometry
 {
 	double vertex[3];
@@ -257,6 +267,8 @@ struct icsettings
 	char pkfile[PARAM_MAX_LENGTH];
 	char tkfile[PARAM_MAX_LENGTH];
 	char metricfile[3][PARAM_MAX_LENGTH];
+	char densityfile[2][PARAM_MAX_LENGTH];
+	char velocityfile[2][PARAM_MAX_LENGTH];
 	double restart_tau;
 	double restart_dtau;
 	double restart_version;
@@ -278,6 +290,7 @@ struct cosmology
 	double w0_fld;
 	double wa_fld;
 	double cs2_fld;
+	double Omega_smg;
 	double Omega_g;
 	double Omega_ur;
 	double Omega_rad;
@@ -286,6 +299,12 @@ struct cosmology
 	double m_ncdm[MAX_PCL_SPECIES-2];
 	double T_ncdm[MAX_PCL_SPECIES-2];
 	double deg_ncdm[MAX_PCL_SPECIES-2];
+#ifdef HAVE_CLASS
+	gsl_spline * Hspline;
+	gsl_interp_accel * acc_H;
+	gsl_spline * tauspline;
+	gsl_interp_accel * acc_tau;
+#endif
 	int num_ncdm;
 };
 

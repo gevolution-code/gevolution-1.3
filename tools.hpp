@@ -282,8 +282,7 @@ void writePowerSpectrum(Real * kbin, Real * power, Real * kscatter, Real * pscat
 			int count = 0;
 			if (infile != NULL)
 			{
-				fscanf(infile, "%*[^\n]\n");
-				if (fscanf(infile, "# redshift z=%lf\n", &weight) != 1)
+				if (fscanf(infile, "%*[^\n]\n") == EOF || fscanf(infile, "# redshift z=%lf\n", &weight) != 1)
 				{
 					cout << " error parsing power spectrum file header for interpolation (EXACT_OUTPUT_REDSHIFTS)" << endl;
 					weight = 1.;
@@ -291,7 +290,10 @@ void writePowerSpectrum(Real * kbin, Real * power, Real * kscatter, Real * pscat
 				else
 				{
 					weight = (weight - z_target) / (1. + weight - 1./a);
-					fscanf(infile, "%*[^\n]\n");
+					if (fscanf(infile, "%*[^\n]\n") == EOF)
+					{
+						cout << " error parsing power spectrum file header for interpolation (EXACT_OUTPUT_REDSHIFTS)" << endl;
+					}
 					for (int i = 0; i < numbins; i++)
 					{
 						if (occupation[i] > 0)

@@ -42,7 +42,6 @@ using namespace LATfield2;
 //   ic                settings for IC generation
 //   cosmo             cosmological parameter structure
 //   class_background  CLASS structure that will contain the background
-//   class_thermo      CLASS structure that will contain thermodynamics
 //   class_perturbs    CLASS structure that will contain perturbations
 //   params            pointer to array of precision settings (optional)
 //   numparam          number of precision settings (default 0)
@@ -52,9 +51,10 @@ using namespace LATfield2;
 // 
 //////////////////////////
 
-void initializeCLASSstructures(metadata & sim, icsettings & ic, cosmology & cosmo, background & class_background, thermo & class_thermo, perturbs & class_perturbs, parameter * params = NULL, int numparam = 0, const char * output_value = "dTk, vTk")
+void initializeCLASSstructures(metadata & sim, icsettings & ic, cosmology & cosmo, background & class_background, perturbs & class_perturbs, parameter * params = NULL, int numparam = 0, const char * output_value = "dTk, vTk")
 {
 	precision class_precision;
+	thermo class_thermo;
 	transfers class_transfers;
   	primordial class_primordial;
 	nonlinear class_nonlinear;
@@ -70,7 +70,7 @@ void initializeCLASSstructures(metadata & sim, icsettings & ic, cosmology & cosm
 	double perturb_sampling_stepsize;
 	int recfast_Nz0;
 	int i;
-	int num_entries = 19;
+	int num_entries = 22;
 #ifdef CLASS_K_PER_DECADE_FOR_PK
 	int k_per_decade_for_pk;
 	if (numparam == 0 || !parseParameter(params, numparam, "k_per_decade_for_pk", k_per_decade_for_pk))
@@ -132,7 +132,7 @@ void initializeCLASSstructures(metadata & sim, icsettings & ic, cosmology & cosm
 	sprintf(class_filecontent.value[i++], "%s", output_value);
 
 	sprintf(class_filecontent.name[i], "gauge");
-	sprintf(class_filecontent.value[i++], "Newtonian");
+	sprintf(class_filecontent.value[i++], "synchronous");
 
 	sprintf(class_filecontent.name[i], "P_k_ini type");
 	sprintf(class_filecontent.value[i++], "analytic_Pk");
@@ -167,11 +167,26 @@ void initializeCLASSstructures(metadata & sim, icsettings & ic, cosmology & cosm
 	sprintf(class_filecontent.name[i], "cs2_fld");
 	sprintf(class_filecontent.value[i++], "%g", cosmo.cs2_fld);
 
+	if (cosmo.Omega_smg < 0.)
+	{
+		sprintf(class_filecontent.name[i], "Omega_Lambda");
+		sprintf(class_filecontent.value[i++], "%g", cosmo.Omega_Lambda);
+	}
+	
+	sprintf(class_filecontent.name[i], "Omega_smg");
+	sprintf(class_filecontent.value[i++], "%g", cosmo.Omega_smg);
+
 	sprintf(class_filecontent.name[i], "N_ncdm");
 	sprintf(class_filecontent.value[i++], "%d", cosmo.num_ncdm);
 
 	sprintf(class_filecontent.name[i], "perturb_sampling_stepsize");
 	sprintf(class_filecontent.value[i++], "%g", perturb_sampling_stepsize);
+
+	sprintf(class_filecontent.name[i], "extra metric transfer functions");
+	sprintf(class_filecontent.value[i++], "y");
+
+	sprintf(class_filecontent.name[i], "output_background_smg");
+  	sprintf(class_filecontent.value[i++],"4");
 
 #ifdef CLASS_K_PER_DECADE_FOR_PK
 	sprintf(class_filecontent.name[i], "k_per_decade_for_pk");
@@ -276,6 +291,12 @@ void initializeCLASSstructures(metadata & sim, icsettings & ic, cosmology & cosm
 		parallel.abortForce();
 	}
 
+	if (thermodynamics_free(&class_thermo) == _FAILURE_)
+	{
+		COUT << " error: calling thermodynamics_free from CLASS library failed!" << endl << " following error message was passed: " << class_thermo.error_message << endl;
+		parallel.abortForce();
+	}
+
 	COUT << endl << " CLASS structures initialized successfully." << endl;
 }
 
@@ -288,24 +309,17 @@ void initializeCLASSstructures(metadata & sim, icsettings & ic, cosmology & cosm
 // 
 // Arguments:
 //   class_background  CLASS structure that contains the background
-//   class_thremo      CLASS structure that contains thermodynamics
 //   class_perturbs    CLASS structure that contains perturbations
 //
 // Returns:
 // 
 //////////////////////////
 
-void freeCLASSstructures(background & class_background, thermo & class_thermo, perturbs & class_perturbs)
+void freeCLASSstructures(background & class_background, perturbs & class_perturbs)
 {
 	if (perturb_free(&class_perturbs) == _FAILURE_)
 	{
 		COUT << " error: calling perturb_free from CLASS library failed!" << endl << " following error message was passed: " << class_perturbs.error_message << endl;
-		parallel.abortForce();
-	}
-	
-	if (thermodynamics_free(&class_thermo) == _FAILURE_)
-	{
-		COUT << " error: calling thermodynamics_free from CLASS library failed!" << endl << " following error message was passed: " << class_thermo.error_message << endl;
 		parallel.abortForce();
 	}
 
@@ -350,16 +364,49 @@ void loadTransferFunctions(background & class_background, perturbs & class_pertu
 	char coltitles[_MAXTITLESTRINGLENGTH_] = {0};
 	char dname[16];
 	char tname[16];
-	char kname[8];
+	char kname[16];
 	char * ptr;
 
 	perturb_output_titles(&class_background, &class_perturbs, class_format, coltitles);
 
 	if (qname != NULL)
 	{
-		sprintf(dname, "d_%s", qname);
-		sprintf(tname, "t_%s", qname);
-		h /= boxsize;
+		if (strcmp(qname, "vx") == 0)
+		{
+			sprintf(dname, "vx_smg");
+			sprintf(tname, "vx_prime_smg");
+			h = 1.;
+		}
+		else if (strcmp(qname, "eta") == 0)
+		{
+			sprintf(dname, "eta");
+			sprintf(tname, "eta_prime");
+			h /= boxsize;
+		}
+		else if (strcmp(qname, "h") == 0)
+		{
+			sprintf(dname, "h");
+			sprintf(tname, "h_prime");
+			h /= boxsize;
+		}
+		else if (strcmp(qname, "Nb") == 0)
+		{
+			sprintf(dname, "H_T_Nb_prime");
+			sprintf(tname, "k2gamma_Nb");
+			h = 1.;
+		}
+		else if (strcmp(qname, "d_m") == 0)
+		{
+			sprintf(dname, "d_cdm");
+			sprintf(tname, "d_b");
+			h = 1.;
+		}
+		else
+		{
+			sprintf(dname, "d_%s", qname);
+			sprintf(tname, "t_%s", qname);
+			h /= boxsize;
+		}
     }
 	else
 	{
@@ -367,21 +414,21 @@ void loadTransferFunctions(background & class_background, perturbs & class_pertu
 		sprintf(tname, "psi");
 		h = 1.;
 	}
-	sprintf(kname, "k");
+	sprintf(kname, "k (h/Mpc)");
 
 	ptr = strtok(coltitles, _DELIMITER_);
 	while (ptr != NULL)
 	{
-    	if (strncmp(ptr, dname, strlen(dname)) == 0) dcol = cols;
-		else if (strncmp(ptr, tname, strlen(tname)) == 0) tcol = cols;
-		else if (strncmp(ptr, kname, strlen(kname)) == 0) kcol = cols;
+    	if (strncmp(ptr, dname, strlen(dname)+1) == 0) dcol = cols;
+		else if (strncmp(ptr, tname, strlen(tname)+1) == 0) tcol = cols;
+		else if (strncmp(ptr, kname, strlen(kname)+1) == 0) kcol = cols;
 		cols++;
     	ptr = strtok(NULL, _DELIMITER_);
   	}
 
 	if (dcol < 0 || tcol < 0 || kcol < 0)
 	{
-		COUT << " error in loadTransferFunctions (HAVE_CLASS)! Unable to identify requested columns!" << endl;
+		COUT << " error in loadTransferFunctions (CLASS interface)! Unable to identify requested columns! (" << kname << ": " << kcol << ", " << dname << ": " << dcol << ", " << tname << ": " << tcol << ")" << endl;
 		parallel.abortForce();
 	}
 
@@ -401,7 +448,7 @@ void loadTransferFunctions(background & class_background, perturbs & class_pertu
 		{
 			if (k[i] < k[i-1])
 			{
-				COUT << " error in loadTransferFunctions (HAVE_CLASS)! k-values are not strictly ordered." << endl;
+				COUT << " error in loadTransferFunctions (CLASS interface)! k-values are not strictly ordered." << endl;
 				parallel.abortForce();
 			}
 		}
@@ -418,6 +465,112 @@ void loadTransferFunctions(background & class_background, perturbs & class_pertu
 	free(k);
 	free(tk_d);
 	free(tk_t);
+}
+
+
+//////////////////////////
+// loadBGFunctions
+//////////////////////////
+// Description:
+//   loads a tabulated background function from the precomputed CLASS structures
+// 
+// Arguments:
+//   class_background  CLASS structure that contains the background
+//   bg_data           will point to the gsl_spline which holds the tabulated
+//                     background function (memory will be allocated)
+//   qname             string containing the name of the function (e.g. "H")
+//   z_in              earliest redshift at which the background function is to be obtained
+//   rescale           rescaling factor for the background function (default 1.0)
+//
+// Returns:
+// 
+//////////////////////////
+
+void loadBGFunctions(background & class_background, gsl_spline * & bg_data, const char * qname, double z_in, double rescale = 1.0)
+{
+	int cols = 0, bgcol = -1, zcol = -1;
+	char coltitles[_MAXTITLESTRINGLENGTH_] = {0};
+	char zname[16];
+	double * a;
+	double * bg;
+	double * data;
+	char * ptr;
+	int bg_size = 0;
+	double dz = 0.05;
+	double z1, z2;
+
+	// Get the names of the background variables as a single string
+	background_output_titles(&class_background, coltitles);
+
+	// Get the redshift variable
+	sprintf(zname, "z");
+	ptr = strtok(coltitles, _DELIMITER_);
+	while (ptr != NULL)
+	{
+		if (strcmp(ptr, qname) == 0) 
+		{
+			bgcol = cols;
+		}
+		else if (strcmp(ptr, zname) == 0)
+		{
+			zcol = cols;
+		}
+
+    	cols++;
+    	ptr = strtok(NULL, _DELIMITER_);
+	}
+	if (bgcol < 0 || zcol < 0)
+	{
+		COUT << " error in loadBGFunctions (CLASS interface)! Unable to identify requested columns! (" << zname << ": " << zcol << ", " << qname << ": " << bgcol << ")" << endl;
+		parallel.abortForce();
+	}
+
+	data = (double *) malloc(sizeof(double) * cols * class_background.bt_size);
+	if(!data)
+	{
+    	COUT << " error in loadBGFunctions (CLASS interface)! Unable to allocate memory!" << endl;
+    	parallel.abortForce();
+  	}
+
+	background_output_data(&class_background, cols, data);
+	for(bg_size=0; data[bg_size*cols + zcol]>z_in * 1.1; bg_size++) {};
+
+	a = (double *) malloc(sizeof(double) * (class_background.bt_size-bg_size+1));
+	bg = (double *) malloc(sizeof(double) * (class_background.bt_size-bg_size+1));
+
+	if(!a || !bg)
+	{
+    	COUT << " error in loadBGFunctions (CLASS interface)! Unable to allocate memory!" << endl;
+    	parallel.abortForce();
+	}
+
+	for (int i = bg_size; i < class_background.bt_size; i++)
+	{
+		a[i-bg_size] = 1. / (1. + data[i*cols + zcol]);
+		bg[i-bg_size] = rescale * data[i*cols + bgcol];
+		if (i > bg_size)
+		{
+			if (a[i-bg_size] < a[i-bg_size-1])
+			{
+				COUT << " error in loadBGFunctions (CLASS interface)! a-values are not strictly ordered." << endl;
+				parallel.abortForce();
+			}
+		}
+	}
+
+	z1 = 1./a[class_background.bt_size-bg_size-1] -1.;
+	z2 = 1./a[class_background.bt_size-bg_size-2] -1.;
+	a[class_background.bt_size-bg_size] = 1./(1.+z1-dz);
+	bg[class_background.bt_size-bg_size] = bg[class_background.bt_size-bg_size-1] - dz *(bg[class_background.bt_size-bg_size-1] -  bg[class_background.bt_size-bg_size-2])/(z1 - z2);
+
+	free(data);
+
+	bg_data = gsl_spline_alloc(gsl_interp_cspline, class_background.bt_size-bg_size+1);
+
+	gsl_spline_init(bg_data, a, bg, class_background.bt_size-bg_size+1);
+
+	free(a);
+	free(bg);
 }
 
 #endif

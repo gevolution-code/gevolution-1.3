@@ -1,5 +1,5 @@
 //////////////////////////
-// Copyright (c) 2015-2019 Julian Adamek
+// Copyright (c) 2015-2024 Julian Adamek
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -28,7 +28,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2022
+// Last modified: August 2024
 //
 //////////////////////////
 
@@ -164,11 +164,14 @@ int main(int argc, char **argv)
 	
 	COUT << COLORTEXT_WHITE << endl;	
 	COUT << "  _   _      _         __ ,  _" << endl;
-	COUT << " (_| (-' \\/ (_) (_ (_| (  ( (_) /\\/	version 1.2         running on " << n*m << " cores." << endl;
+	COUT << " (_| (-' \\/ (_) (_ (_| (  ( (_) /\\/	version 1.3 beta    running on " << n*m << " cores." << endl;
 	COUT << "  -'" << endl << COLORTEXT_RESET << endl;
 	
 #if GRADIENT_ORDER > 1
 	COUT << " compiled with GRADIENT_ORDER=" << GRADIENT_ORDER << endl;
+#endif
+#ifdef CIC_PROJECT_TIJ
+	COUT << " compiled with CIC_PROJECT_TIJ" << endl;
 #endif
 	
 	if (settingsfile == NULL)
@@ -193,8 +196,9 @@ int main(int argc, char **argv)
 	free(params);
 
 #ifdef HAVE_CLASS
+	cosmo.Hspline = NULL;
+
 	background class_background;
-	thermo class_thermo;
   	perturbs class_perturbs;
   	
   	if (precisionfile != NULL)
@@ -231,6 +235,7 @@ int main(int argc, char **argv)
 	Field<Cplx> scalarFT;
 	Field<Cplx> SijFT;
 	Field<Cplx> BiFT;
+	Field<Cplx> * zetaFT = NULL;
 	source.initialize(lat,1);
 	phi.initialize(lat,1);
 	chi.initialize(lat,1);
@@ -258,6 +263,14 @@ int main(int argc, char **argv)
 	viFT.initialize(latFT,3);
 	PlanFFT<Cplx> plan_vi(&vi, &viFT);
 	double a_old;
+#endif
+#ifdef TENSOR_EVOLUTION
+	Field<Cplx> hijFT;
+	Field<Cplx> hijprimeFT;
+	hijFT.initialize(latFT,3,3,symmetric);
+	hijprimeFT.initialize(latFT,3,3,symmetric);
+	PlanFFT<Cplx> plan_hij(&Sij, &hijFT);
+	hijprimeFT.alloc();
 #endif
 
 	update_cdm_fields[0] = &phi;
@@ -287,19 +300,22 @@ int main(int argc, char **argv)
 
 	fourpiG = 1.5 * sim.boxsize * sim.boxsize / C_SPEED_OF_LIGHT / C_SPEED_OF_LIGHT;
 	a = 1. / (1. + sim.z_in);
-	tau = particleHorizon(a, fourpiG, cosmo);
-	
-	if (sim.Cf * dx < sim.steplimit / Hconf(a, fourpiG, cosmo))
-		dtau = sim.Cf * dx;
-	else
-		dtau = sim.steplimit / Hconf(a, fourpiG, cosmo);
-		
-	dtau_old = 0.;
+	tau = -1;
+	dtau = -1;
+	dtau_old = -1;
 	
 	if (ic.generator == ICGEN_BASIC)
-		generateIC_basic(sim, ic, cosmo, fourpiG, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, params, numparam); // generates ICs on the fly
+		generateIC_basic(sim, ic, cosmo, fourpiG, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, 
+#ifdef HAVE_CLASS
+		class_background, class_perturbs,
+#endif		
+		params, numparam); // generates ICs on the fly
 	else if (ic.generator == ICGEN_READ_FROM_DISK)
 		readIC(sim, ic, cosmo, fourpiG, a, tau, dtau, dtau_old, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, cycle, snapcount, pkcount, restartcount, IDbacklog);
+//#ifdef ICGEN_RELIC
+//	else if (ic.generator == ICGEN_RELIC)
+//		generateIC_2ndorder(sim, ic, cosmo, fourpiG, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, zetaFT, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, params, numparam);
+//#endif
 #ifdef ICGEN_PREVOLUTION
 	else if (ic.generator == ICGEN_PREVOLUTION)
 		generateIC_prevolution(sim, ic, cosmo, fourpiG, a, tau, dtau, dtau_old, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, params, numparam);
@@ -344,6 +360,13 @@ int main(int argc, char **argv)
 	a_old = a;
 	projection_init(&vi);
 #endif
+#ifdef TENSOR_EVOLUTION
+	for (kFT.first(); kFT.test(); kFT.next())
+	{
+		for (i = 0; i < hijprimeFT.components(); i++)
+			hijprimeFT(kFT, i) = Cplx(0.,0.);
+	}
+#endif
 	
 #ifdef BENCHMARK
 	initialization_time = MPI_Wtime() - start_time;
@@ -356,18 +379,50 @@ int main(int argc, char **argv)
 #ifdef HAVE_CLASS
 	if (sim.radiation_flag > 0 || sim.fluid_flag > 0)
 	{
-		initializeCLASSstructures(sim, ic, cosmo, class_background, class_thermo, class_perturbs, params, numparam);
+		cosmology cosmo2 = cosmo;
+		if (cosmo.Hspline == NULL)
+		{
+			initializeCLASSstructures(sim, ic, cosmo, class_background, class_perturbs, params, numparam);
+			loadBGFunctions(class_background, cosmo.Hspline, "H [1/Mpc]", sim.z_in, sim.boxsize/cosmo.h);
+			cosmo.acc_H = gsl_interp_accel_alloc();
+		}
+		else
+			cosmo2.Hspline = NULL;
+		loadBGFunctions(class_background, cosmo.tauspline, "conf. time [Mpc]", sim.z_in, cosmo.h/sim.boxsize);
+		cosmo.acc_tau = gsl_interp_accel_alloc();
+		COUT << "Initial Hubble rate = " << Hconf(a, fourpiG, cosmo2) << " (gevolution), " << Hconf(a, fourpiG, cosmo) << " (CLASS) -- using CLASS" << endl;
 		if (sim.gr_flag > 0 && a < 1. / (sim.z_switch_linearchi + 1.) && (ic.generator == ICGEN_BASIC || (ic.generator == ICGEN_READ_FROM_DISK && cycle == 0)))
 		{
-			prepareFTchiLinear(class_background, class_perturbs, scalarFT, sim, ic, cosmo, fourpiG, a);
+			prepareFTchiLinear(class_background, class_perturbs, scalarFT, sim, ic, cosmo, fourpiG, a, 1., zetaFT);
 			plan_source.execute(FFT_BACKWARD);
 			for (x.first(); x.test(); x.next())
 				chi(x) += source(x);
 			chi.updateHalo();
 		}
 	}
+	else if (cosmo.Hspline != NULL)
+	{
+		gsl_spline_free(cosmo.Hspline);
+		gsl_interp_accel_free(cosmo.acc_H);
+		cosmo.Hspline = NULL;
+		freeCLASSstructures(class_background, class_perturbs);
+	}
 	if (numparam > 0) free(params);
 #endif
+
+	if (tau < 0.)
+		tau = particleHorizon(a, fourpiG, cosmo);
+	
+	if (dtau < 0.)
+	{
+		if (sim.Cf * dx < sim.steplimit / Hconf(a, fourpiG, cosmo))
+			dtau = sim.Cf * dx;
+		else
+			dtau = sim.steplimit / Hconf(a, fourpiG, cosmo);
+	}
+
+	if (dtau_old < 0.)
+		dtau_old = 0.;
 
 	while (true)    // main loop
 	{
@@ -378,7 +433,7 @@ int main(int argc, char **argv)
 		projection_init(&source);
 #ifdef HAVE_CLASS
 		if (sim.radiation_flag > 0 || sim.fluid_flag > 0)
-			projection_T00_project(class_background, class_perturbs, source, scalarFT, &plan_source, sim, ic, cosmo, fourpiG, a);
+			projection_T00_project(class_background, class_perturbs, source, scalarFT, &plan_source, sim, ic, cosmo, fourpiG, a, 1., zetaFT);
 #endif
 		if (sim.gr_flag > 0)
 		{
@@ -550,7 +605,7 @@ int main(int argc, char **argv)
 #ifdef HAVE_CLASS
 		if (sim.radiation_flag > 0 && a < 1. / (sim.z_switch_linearchi + 1.))
 		{
-			prepareFTchiLinear(class_background, class_perturbs, scalarFT, sim, ic, cosmo, fourpiG, a);
+			prepareFTchiLinear(class_background, class_perturbs, scalarFT, sim, ic, cosmo, fourpiG, a, 1., zetaFT);
 			projectFTscalar(SijFT, scalarFT, 1);
 		}
 		else
@@ -575,7 +630,7 @@ int main(int argc, char **argv)
 			plan_Bi.execute(FFT_FORWARD);
 #ifdef BENCHMARK
 			fft_time += MPI_Wtime() - ref2_time;
-			fft_count++;
+			fft_count += 3;
 #endif
 			projectFTvector(BiFT, BiFT, fourpiG * dx * dx); // solve B using elliptic constraint (k-space)
 #ifdef CHECK_B
@@ -596,6 +651,13 @@ int main(int argc, char **argv)
 			fft_count += 3;
 #endif
 			Bi.updateHalo();  // communicate halo values
+
+#ifdef TENSOR_EVOLUTION
+			if (cycle == 0)
+				projectFTtensor(SijFT, hijFT);
+			else
+				evolveFTtensor(SijFT, hijFT, hijprimeFT, Hconf(a, fourpiG, cosmo), dtau, dtau_old);
+#endif
 		}
 
 #ifdef BENCHMARK 
@@ -644,12 +706,15 @@ int main(int argc, char **argv)
 #ifdef HAVE_CLASS
 				class_background, class_perturbs, ic,
 #endif
-				&pcls_cdm, &pcls_b, pcls_ncdm, &phi, &chi, &Bi, &source, &Sij, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij
+				&pcls_cdm, &pcls_b, pcls_ncdm, &phi, &chi, &Bi, &source, &Sij, zetaFT, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij
 #ifdef CHECK_B
 				, &Bi_check, &BiFT_check, &plan_Bi_check
 #endif
 #ifdef VELOCITY
 				, &vi, &viFT, &plan_vi
+#endif
+#ifdef TENSOR_EVOLUTION
+				, &hijFT, &hijprimeFT
 #endif
 			);
 
@@ -667,12 +732,15 @@ int main(int argc, char **argv)
 #ifdef HAVE_CLASS
 				class_background, class_perturbs, ic,
 #endif
-				&pcls_cdm, &pcls_b, pcls_ncdm, &phi, &chi, &Bi, &source, &Sij, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij
+				&pcls_cdm, &pcls_b, pcls_ncdm, &phi, &chi, &Bi, &source, &Sij, zetaFT, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij
 #ifdef CHECK_B
 				, &Bi_check, &BiFT_check, &plan_Bi_check
 #endif
 #ifdef VELOCITY
 				, &vi, &viFT, &plan_vi
+#endif
+#ifdef TENSOR_EVOLUTION
+				, &hijFT, &hijprimeFT
 #endif
 			);
 		}
@@ -884,9 +952,12 @@ int main(int argc, char **argv)
 		ref_time = MPI_Wtime();
 #endif
 
+if (zetaFT != NULL)
+	delete[] zetaFT;
+
 #ifdef HAVE_CLASS
 	if (sim.radiation_flag > 0 || sim.fluid_flag > 0)
-		freeCLASSstructures(class_background, class_thermo, class_perturbs);
+		freeCLASSstructures(class_background, class_perturbs);
 #endif
 
 #ifdef BENCHMARK

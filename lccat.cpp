@@ -245,9 +245,7 @@ int main(int argc, char **argv)
 
 			if (infile != NULL)
 			{
-				fread(&blocksize, sizeof(uint32_t), 1, infile);
-
-				if (blocksize != sizeof(hdr))
+				if ((fread(&blocksize, sizeof(uint32_t), 1, infile) != 1) || (blocksize != sizeof(hdr)))
 				{
 					cout << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": unknown file format " << filename << "!" << endl;
 					fclose(infile);
@@ -333,9 +331,7 @@ int main(int argc, char **argv)
 
 			if (infile != NULL)
 			{
-				fread(&blocksize, sizeof(uint32_t), 1, infile);
-
-				if (blocksize != sizeof(hdr))
+				if ((fread(&blocksize, sizeof(uint32_t), 1, infile) != 1) || (blocksize != sizeof(hdr)))
 				{
 					cout << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": unknown file format " << filename << "!" << endl;
 					fclose(infile);

@@ -4,9 +4,9 @@
 // 
 // Output of snapshots, light cones and spectra
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: March 2020
+// Last modified: August 2024
 //
 //////////////////////////
 
@@ -68,7 +68,7 @@ void writeSnapshots(metadata & sim, cosmology & cosmo, const double fourpiG, con
 #endif
 )
 {
-	char filename[2*PARAM_MAX_LENGTH+24];
+	char filename[2*PARAM_MAX_LENGTH+64];
 	char buffer[64];
 	int i;
 	gadget2_header hdr;
@@ -240,20 +240,24 @@ void writeSnapshots(metadata & sim, cosmology & cosmo, const double fourpiG, con
 #ifdef EXTERNAL_IO
 		phi->saveHDF5_server_write(NUMBER_OF_IO_FILES);
 #else
+	{
 		if (sim.downgrade_factor > 1)
 			phi->saveHDF5_coarseGrain3D(h5filename + filename + "_phi.h5", sim.downgrade_factor);
 		else
 			phi->saveHDF5(h5filename + filename + "_phi.h5");
+	}
 #endif
 				
 	if (sim.out_snapshot & MASK_CHI)
 #ifdef EXTERNAL_IO
 		chi->saveHDF5_server_write(NUMBER_OF_IO_FILES);
-#else	
+#else
+	{	
 		if (sim.downgrade_factor > 1)
 			chi->saveHDF5_coarseGrain3D(h5filename + filename + "_chi.h5", sim.downgrade_factor);
 		else
 			chi->saveHDF5(h5filename + filename + "_chi.h5");
+	}
 #endif
 				
 	if (sim.out_snapshot & MASK_HIJ)
@@ -516,11 +520,11 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 	double s[2];
 	char filename[2*PARAM_MAX_LENGTH+24];
 	char buffer[268];
-	FILE * outfile;
+	FILE * outfile = NULL;
 	gadget2_header hdr;
 	set<long> IDprelog[MAX_PCL_SPECIES];
-	long * IDcombuf;
-	long * IDcombuf2;
+	long * IDcombuf = NULL;
+	long * IDcombuf2 = NULL;
 	Site xsim;
 	int done_B = 0;
 #ifdef HAVE_HEALPIX
@@ -535,7 +539,7 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 	Real * commbuf;
 	int pixbuf_size[9];
 	int pixbuf_reserve[9];
-	int64_t bytes, bytes2, offset2;
+	int64_t bytes, bytes2, offset2 = 0;
 	vector<MPI_Offset> offset;
 	char ** outbuf = new char*[LIGHTCONE_MAX_FIELDS];
 	healpix_header maphdr;
@@ -547,7 +551,6 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 	uint32_t blocksize;
 	MPI_File mapfile;
 	MPI_Status status;
-	MPI_Datatype patch;
 	int io_group_size;
 	long pixcount = 0;
 	
@@ -781,11 +784,11 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 				pixbatch_size[0].back() *= pixbatch_size[0].back();
 				for (p = 0; p < 3; p++)
 				{
-					if (pixbatch_delim[p].back() <= maphdr.Nside_ring)
+					if (pixbatch_delim[p].back() <= (int) maphdr.Nside_ring)
 						pixbatch_delim[p].back() = 2 * pixbatch_delim[p].back() * (pixbatch_delim[p].back()+1);
-					else if (pixbatch_delim[p].back() <= 3 * maphdr.Nside_ring)
+					else if (pixbatch_delim[p].back() <= (int) (3 * maphdr.Nside_ring))
 						pixbatch_delim[p].back() = 2 * maphdr.Nside_ring * (maphdr.Nside_ring+1) + (pixbatch_delim[p].back()-maphdr.Nside_ring) * 4 * maphdr.Nside_ring;
-					else if (pixbatch_delim[p].back() < 4 * maphdr.Nside_ring)
+					else if (pixbatch_delim[p].back() < (int) (4 * maphdr.Nside_ring))
 						pixbatch_delim[p].back() = 12 * maphdr.Nside_ring * maphdr.Nside_ring - 2 * (4 * maphdr.Nside_ring - 1 - pixbatch_delim[p].back()) * (4 * maphdr.Nside_ring - pixbatch_delim[p].back());
 					else
 						pixbatch_delim[p].back() = 12 * maphdr.Nside_ring * maphdr.Nside_ring;
@@ -1337,7 +1340,7 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 				
 				if ((io_group_size == 0 && parallel.rank() == ((shell - shell_inner) * parallel.size()) / (shell_outer + 1 - shell_inner)) || (io_group_size > 0 && shell - shell_inner == shell_write))
 				{
-					if (q != sender_proc.size())
+					if (q != (int) sender_proc.size())
 					{
 						cout << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": proc#" << parallel.rank() << " pixel batch count mismatch! expecting " << q << " but sender list contains " << sender_proc.size() << " entries!" << endl;
 						exit(-99);
@@ -1345,12 +1348,12 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 				
 					for (int64_t p2 = p; p2 < p+q; p2 += n)
 					{
-						while (pix < pixbatch_id.size() && pixbatch_id[pix] < p2)
+						while (pix < (int) pixbatch_id.size() && pixbatch_id[pix] < p2)
 						{
 							for (pixbatch_type = 0; pixbatch_delim[pixbatch_type].back() <= pixbatch_id[pix]; pixbatch_type++);
 							if (io_group_size > 0 && pixbatch_delim[2].back() >= io_group_size && pixbatch_id[pix] / (pixbatch_delim[2].back() / io_group_size) < io_group_size)
 							{
-								for (n = 1; pix+n < pixbatch_id.size() && pixbatch_id[pix+n] == pixbatch_id[pix+n-1]+1 && pixbatch_id[pix+n] < pixbatch_delim[pixbatch_type].back() && (pixbatch_id[pix+n] / (pixbatch_delim[2].back() / io_group_size) == pixbatch_id[pix] / (pixbatch_delim[2].back() / io_group_size) || pixbatch_id[pix] / (pixbatch_delim[2].back() / io_group_size) == io_group_size-1); n++);
+								for (n = 1; pix+n < (int) pixbatch_id.size() && pixbatch_id[pix+n] == pixbatch_id[pix+n-1]+1 && pixbatch_id[pix+n] < pixbatch_delim[pixbatch_type].back() && (pixbatch_id[pix+n] / (pixbatch_delim[2].back() / io_group_size) == pixbatch_id[pix] / (pixbatch_delim[2].back() / io_group_size) || pixbatch_id[pix] / (pixbatch_delim[2].back() / io_group_size) == io_group_size-1); n++);
 								for (j = 0; j < LIGHTCONE_MAX_FIELDS; j++)
 								{
 									if (pixbuf[j][4] != NULL && pixbatch_size[pixbatch_type].back() > 0)
@@ -1359,7 +1362,7 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 							}
 							else
 							{
-								for (n = 1; pix+n < pixbatch_id.size() && pixbatch_id[pix+n] == pixbatch_id[pix+n-1]+1 && pixbatch_id[pix+n] < pixbatch_delim[pixbatch_type].back(); n++);
+								for (n = 1; pix+n < (int) pixbatch_id.size() && pixbatch_id[pix+n] == pixbatch_id[pix+n-1]+1 && pixbatch_id[pix+n] < pixbatch_delim[pixbatch_type].back(); n++);
 								for (j = 0; j < LIGHTCONE_MAX_FIELDS; j++)
 								{
 									if (pixbuf[j][4] != NULL && pixbatch_size[pixbatch_type].back() > 0)
@@ -1376,7 +1379,7 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 						
 						if (sender_proc[p2-p] == parallel.rank())
 						{
-							if (pix+n-1 >= pixbatch_id.size())
+							if (pix+n-1 >= (int) pixbatch_id.size())
 							{
 								cerr << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": proc#" << parallel.rank() << " pixel batch index mismatch! expecting " << p2 << " but ID list contains not enough elements!" << endl;
 								exit(-99);
@@ -1430,13 +1433,13 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 				
 				p = ((((shell + 1 - shell_inner) * parallel.size() + shell_outer - shell_inner) / (shell_outer + 1 - shell_inner)) - (((shell - shell_inner) * parallel.size() + shell_outer - shell_inner) / (shell_outer + 1 - shell_inner)));
 				
-				while (pix < pixbatch_id.size())
+				while (pix < (int) pixbatch_id.size())
 				{
 					for (pixbatch_type = 0; pixbatch_delim[pixbatch_type].back() <= pixbatch_id[pix]; pixbatch_type++);
 					
 					if (p > 0 && pixbatch_delim[2].back() >= p && pixbatch_id[pix] / (pixbatch_delim[2].back() / p) < p)
 					{
-						for (n = 1; pix+n < pixbatch_id.size() && pixbatch_id[pix+n] == pixbatch_id[pix+n-1]+1 && pixbatch_id[pix+n] < pixbatch_delim[pixbatch_type].back() && (pixbatch_id[pix+n] / (pixbatch_delim[2].back() / p) == pixbatch_id[pix] / (pixbatch_delim[2].back() / p) || pixbatch_id[pix] / (pixbatch_delim[2].back() / p) == p-1); n++);
+						for (n = 1; pix+n < (int) pixbatch_id.size() && pixbatch_id[pix+n] == pixbatch_id[pix+n-1]+1 && pixbatch_id[pix+n] < pixbatch_delim[pixbatch_type].back() && (pixbatch_id[pix+n] / (pixbatch_delim[2].back() / p) == pixbatch_id[pix] / (pixbatch_delim[2].back() / p) || pixbatch_id[pix] / (pixbatch_delim[2].back() / p) == p-1); n++);
 						for (j = 0; j < LIGHTCONE_MAX_FIELDS; j++)
 						{
 							if (pixbuf[j][4] != NULL && pixbatch_size[pixbatch_type].back() > 0)
@@ -1445,7 +1448,7 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 					}
 					else
 					{
-						for (n = 1; pix+n < pixbatch_id.size() && pixbatch_id[pix+n] == pixbatch_id[pix+n-1]+1 && pixbatch_id[pix+n] < pixbatch_delim[pixbatch_type].back(); n++);
+						for (n = 1; pix+n < (int) pixbatch_id.size() && pixbatch_id[pix+n] == pixbatch_id[pix+n-1]+1 && pixbatch_id[pix+n] < pixbatch_delim[pixbatch_type].back(); n++);
 						for (j = 0; j < LIGHTCONE_MAX_FIELDS; j++)
 						{
 							if (pixbuf[j][4] != NULL && pixbatch_size[pixbatch_type].back() > 0)
@@ -1743,6 +1746,7 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 //   Bi             pointer to allocated field
 //   source         pointer to allocated field
 //   Sij            pointer to allocated field
+//   zetaFT         pointer to allocated field (or NULL)
 //   scalarFT       pointer to allocated field
 //   BiFT           pointer to allocated field
 //   SijFT          pointer to allocated field
@@ -1754,6 +1758,11 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 //   Bi_check       pointer to allocated field (or NULL)
 //   BiFT_check     pointer to allocated field (or NULL)
 //   plan_Bi_check  pointer to FFT planner (or NULL)
+//   vi             pointer to allocated field (or NULL)
+//   viFT           pointer to allocated field (or NULL)
+//   plan_vi        pointer to FFT planner (or NULL)
+//   hijFT          pointer to allocated field (or NULL)
+//   hijprimeFT     pointer to allocated field (or NULL)
 //
 // Returns:
 // 
@@ -1763,16 +1772,19 @@ void writeSpectra(metadata & sim, cosmology & cosmo, const double fourpiG, const
 #ifdef HAVE_CLASS
 background & class_background, perturbs & class_perturbs, icsettings & ic,
 #endif
-Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_cdm, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_b, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_ncdm, Field<Real> * phi, Field<Real> * chi, Field<Real> * Bi, Field<Real> * source, Field<Real> * Sij, Field<Cplx> * scalarFT, Field<Cplx> * BiFT, Field<Cplx> * SijFT, PlanFFT<Cplx> * plan_phi, PlanFFT<Cplx> * plan_chi, PlanFFT<Cplx> * plan_Bi, PlanFFT<Cplx> * plan_source, PlanFFT<Cplx> * plan_Sij
+Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_cdm, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_b, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_ncdm, Field<Real> * phi, Field<Real> * chi, Field<Real> * Bi, Field<Real> * source, Field<Real> * Sij, Field<Cplx> * zetaFT, Field<Cplx> * scalarFT, Field<Cplx> * BiFT, Field<Cplx> * SijFT, PlanFFT<Cplx> * plan_phi, PlanFFT<Cplx> * plan_chi, PlanFFT<Cplx> * plan_Bi, PlanFFT<Cplx> * plan_source, PlanFFT<Cplx> * plan_Sij
 #ifdef CHECK_B
 , Field<Real> * Bi_check, Field<Cplx> * BiFT_check, PlanFFT<Cplx> * plan_Bi_check
 #endif
 #ifdef VELOCITY
 , Field<Real> * vi, Field<Cplx> * viFT, PlanFFT<Cplx> * plan_vi
 #endif
+#ifdef TENSOR_EVOLUTION
+, Field<Cplx> * hijFT, Field<Cplx> * hijprimeFT
+#endif
 )
 {
-	char filename[2*PARAM_MAX_LENGTH+24];
+	char filename[2*PARAM_MAX_LENGTH+64];
 	char buffer[64];
 	int i, j;
 	Site x(phi->lattice());
@@ -1799,7 +1811,7 @@ Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_c
 #ifdef HAVE_CLASS
 		if ((sim.radiation_flag > 0 || sim.fluid_flag > 0) && sim.gr_flag == 0)
 		{
-			projection_T00_project(class_background, class_perturbs, *source, *scalarFT, plan_source, sim, ic, cosmo, fourpiG, a);
+			projection_T00_project(class_background, class_perturbs, *source, *scalarFT, plan_source, sim, ic, cosmo, fourpiG, a, 1., zetaFT);
 			if (sim.out_pk & MASK_DELTA)
 			{
 				Omega_ncdm = 0;
@@ -1978,6 +1990,16 @@ Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_c
 		extractPowerSpectrum(*SijFT, kbin, power, kscatter, pscatter, occupation, sim.numbins, false, KTYPE_LINEAR);
 		sprintf(filename, "%s%s%03d_hij.dat", sim.output_path, sim.basename_pk, pkcount);
 		writePowerSpectrum(kbin, power, kscatter, pscatter, occupation, sim.numbins, sim.boxsize, 2. * M_PI * M_PI, filename, "power spectrum of hij", a, sim.z_pk[pkcount]);
+
+#ifdef TENSOR_EVOLUTION
+		extractPowerSpectrum(*hijFT, kbin, power, kscatter, pscatter, occupation, sim.numbins, false, KTYPE_LINEAR);
+		sprintf(filename, "%s%s%03d_hij_dyn.dat", sim.output_path, sim.basename_pk, pkcount);
+		writePowerSpectrum(kbin, power, kscatter, pscatter, occupation, sim.numbins, sim.boxsize, 2. * M_PI * M_PI, filename, "power spectrum of hij", a, sim.z_pk[pkcount]);
+		
+		extractPowerSpectrum(*hijprimeFT, kbin, power, kscatter, pscatter, occupation, sim.numbins, false, KTYPE_LINEAR);
+		sprintf(filename, "%s%s%03d_hij_prime.dat", sim.output_path, sim.basename_pk, pkcount);
+		writePowerSpectrum(kbin, power, kscatter, pscatter, occupation, sim.numbins, sim.boxsize, 2. * M_PI * M_PI * Hconf(a, fourpiG, cosmo) * Hconf(a, fourpiG, cosmo), filename, "power spectrum of hij' / Hconf", a, sim.z_pk[pkcount]);
+#endif
 	}
 			
 	if ((sim.out_pk & MASK_T00 || sim.out_pk & MASK_DELTA) && sim.gr_flag > 0)
@@ -1986,7 +2008,7 @@ Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_c
 #ifdef HAVE_CLASS
 		if (sim.radiation_flag > 0 || sim.fluid_flag > 0)
 		{
-			projection_T00_project(class_background, class_perturbs, *source, *scalarFT, plan_source, sim, ic, cosmo, fourpiG, a);
+			projection_T00_project(class_background, class_perturbs, *source, *scalarFT, plan_source, sim, ic, cosmo, fourpiG, a, 1., zetaFT);
 			if (sim.out_pk & MASK_DELTA)
 			{
 				Omega_ncdm = 0;

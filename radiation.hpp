@@ -4,9 +4,9 @@
 // 
 // code components related to radiation and linear relativistic species
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: November 2019
+// Last modified: August 2024
 //
 //////////////////////////
 
@@ -37,12 +37,13 @@
 //   fourpiG           4 pi G (in code units)
 //   a                 scale factor
 //   coeff             multiplicative coefficient (default 1)
+//   zetaFT            reference to Fourier image of zeta (default NULL)
 //
 // Returns:
 // 
 //////////////////////////
 
-void projection_T00_project(background & class_background, perturbs & class_perturbs, Field<Real> & source, Field<Cplx> & scalarFT, PlanFFT<Cplx> * plan_source, metadata & sim, icsettings & ic, cosmology & cosmo, const double fourpiG, double a, double coeff = 1.)
+void projection_T00_project(background & class_background, perturbs & class_perturbs, Field<Real> & source, Field<Cplx> & scalarFT, PlanFFT<Cplx> * plan_source, metadata & sim, icsettings & ic, cosmology & cosmo, const double fourpiG, double a, double coeff = 1., Field<Cplx> * zetaFT = NULL)
 {
 	gsl_spline * tk1 = NULL;
 	gsl_spline * tk2 = NULL;
@@ -50,17 +51,17 @@ void projection_T00_project(background & class_background, perturbs & class_pert
 	double * k = NULL;
 	char ncdm_name[8];
 	int i, p, n = 0;
-	double rescale, Omega_ncdm = 0., Omega_rad = 0., Omega_fld = 0.;
+	double rescale, Omega_ncdm = 0., Omegaw_ncdm = 0., Omega_rad = 0., Omega_fld = 0., bg_smg = 0.;
 	Site x(source.lattice());
 	rKSite kFT(scalarFT.lattice());
 
-	if (a < 1. / (sim.z_switch_deltarad + 1.) && cosmo.Omega_g > 0 && sim.radiation_flag == 1)
+	if (a < 1. / (sim.z_switch_deltarad + 1.) && cosmo.Omega_g + cosmo.Omega_ur > 0 && sim.radiation_flag == 1)
 	{
 		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "g", sim.boxsize, (1. / a) - 1., cosmo.h);
 		Omega_rad += cosmo.Omega_g;
 
 		n = tk1->size;
-		delta = (double *) malloc(n * sizeof(double));
+		delta = (double *) calloc(n, sizeof(double));
 		k = (double *) malloc(n * sizeof(double));
 		
 		for (i = 0; i < n; i++)
@@ -71,30 +72,12 @@ void projection_T00_project(background & class_background, perturbs & class_pert
 
 		gsl_spline_free(tk1);
 		gsl_spline_free(tk2);
-	}
 
-	if (a < 1. / (sim.z_switch_deltarad + 1.) && cosmo.Omega_ur > 0 && sim.radiation_flag == 1)
-	{
 		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "ur", sim.boxsize, (1. / a) - 1., cosmo.h);
 		Omega_rad += cosmo.Omega_ur;
 
-		if (delta == NULL)
-		{
-			n = tk1->size;
-			delta = (double *) malloc(n * sizeof(double));
-			k = (double *) malloc(n * sizeof(double));
-
-			for (i = 0; i < n; i++)
-			{
-				delta[i] = -tk1->y[i] * coeff * cosmo.Omega_ur * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i] / a;
-				k[i] = tk1->x[i];
-			}
-		}
-		else
-		{
-			for (i = 0; i < n; i++)
+		for (i = 0; i < n; i++)
 				delta[i] -= tk1->y[i] * coeff * cosmo.Omega_ur * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i] / a;
-		}
 
 		gsl_spline_free(tk1);
 		gsl_spline_free(tk2);
@@ -108,20 +91,15 @@ void projection_T00_project(background & class_background, perturbs & class_pert
 		if (delta == NULL)
 		{
 			n = tk1->size;
-			delta = (double *) malloc(n * sizeof(double));
+			delta = (double *) calloc(n, sizeof(double));
 			k = (double *) malloc(n * sizeof(double));
 
 			for (i = 0; i < n; i++)
-			{
-				delta[i] = -tk1->y[i] * coeff * Omega_fld * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i];
 				k[i] = tk1->x[i];
-			}
 		}
-		else
-		{
-			for (i = 0; i < n; i++)
-				delta[i] -= tk1->y[i] * coeff * Omega_fld * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i];
-		}
+		
+		for (i = 0; i < n; i++)
+			delta[i] -= tk1->y[i] * coeff * Omega_fld * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i];
 
 		gsl_spline_free(tk1);
 		gsl_spline_free(tk2);
@@ -135,24 +113,20 @@ void projection_T00_project(background & class_background, perturbs & class_pert
 			loadTransferFunctions(class_background, class_perturbs, tk1, tk2, ncdm_name, sim.boxsize, (1. / a) - 1., cosmo.h);
 			rescale = bg_ncdm(a, cosmo, p);
 			Omega_ncdm += rescale;
+			Omegaw_ncdm += pressure_ncdm(a, cosmo, p);
 
 			if (delta == NULL)
 			{
 				n = tk1->size;
-				delta = (double *) malloc(n * sizeof(double));
+				delta = (double *) calloc(n, sizeof(double));
 				k = (double *) malloc(n * sizeof(double));
 
 				for (i = 0; i < n; i++)
-				{
-					delta[i] = -tk1->y[i] * coeff * rescale * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i];
 					k[i] = tk1->x[i];
-				}
 			}
-			else
-			{
-				for (i = 0; i < n; i++)
-					delta[i] -= tk1->y[i] * coeff * rescale * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i];
-			}
+
+			for (i = 0; i < n; i++)
+				delta[i] -= tk1->y[i] * coeff * rescale * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i];
 
 			gsl_spline_free(tk1);
 			gsl_spline_free(tk2);
@@ -161,22 +135,64 @@ void projection_T00_project(background & class_background, perturbs & class_pert
 
 	if (n > 0)
 	{
-		if (sim.gr_flag == 0) // add gauge correction for N-body gauge
+		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "eta", sim.boxsize, (a < 1.) ? (1. / a) - 1. : 0., cosmo.h);
+
+		if (sim.gr_flag == 0) // add gauge correction for N-body gauge: -3 Hconf (1+w) eta' / (a H')
 		{
-			loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "tot", sim.boxsize, (1. / a) - 1., cosmo.h);
+			rescale = 1. / gsl_spline_eval_deriv(cosmo.Hspline, a, cosmo.acc_H) / a / a;
+
+			for (i = 0; i < n; i++)
+				delta[i] += coeff * (4. * Omega_rad / a + 3. * Omega_ncdm + 3. * Omegaw_ncdm + 3. * (1. + cosmo.w0_fld) * Omega_fld + 3. * bg_smg) * rescale * M_PI * tk2->y[i] * sqrt(Pk_primordial(tk2->x[i] * cosmo.h / sim.boxsize, ic) / tk2->x[i]) / tk2->x[i];
+		}
+		else // add gauge correction for Poisson gauge: -3 Hconf (1+w) (3 eta' + 0.5 h') / k^2
+		{
 			rescale = Hconf(a, fourpiG, cosmo);
 
 			for (i = 0; i < n; i++)
-				delta[i] -= coeff * (4. * Omega_rad / a + 3. * Omega_ncdm + 3. * (1. + cosmo.w0_fld) * Omega_fld) * rescale * M_PI * tk2->y[i] * sqrt(Pk_primordial(tk2->x[i] * cosmo.h / sim.boxsize, ic) / tk2->x[i]) / tk2->x[i] / tk2->x[i] / tk2->x[i];
+				delta[i] += coeff * (4. * Omega_rad / a + 3. * Omega_ncdm + 3. * Omegaw_ncdm + 3. * (1. + cosmo.w0_fld) * Omega_fld + 3. * bg_smg) * 3. * rescale * M_PI * tk2->y[i] * sqrt(Pk_primordial(tk2->x[i] * cosmo.h / sim.boxsize, ic) / tk2->x[i]) / tk2->x[i] / tk2->x[i] / tk2->x[i];
 
 			gsl_spline_free(tk1);
 			gsl_spline_free(tk2);
+
+			loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "h", sim.boxsize, (a < 1.) ? (1. / a) - 1. : 0., cosmo.h);
+
+			for (i = 0; i < n; i++)
+				delta[i] += coeff * (4. * Omega_rad / a + 3. * Omega_ncdm + 3. * Omegaw_ncdm + 3. * (1. + cosmo.w0_fld) * Omega_fld + 3. * bg_smg) * 0.5 * rescale * M_PI * tk2->y[i] * sqrt(Pk_primordial(tk2->x[i] * cosmo.h / sim.boxsize, ic) / tk2->x[i]) / tk2->x[i] / tk2->x[i] / tk2->x[i];
 		}
+
+		gsl_spline_free(tk1);
+		gsl_spline_free(tk2);
 
 		tk1 = gsl_spline_alloc(gsl_interp_cspline, n);
 		gsl_spline_init(tk1, k, delta, n);		
 
-		generateRealization(scalarFT, 0., tk1, (unsigned int) ic.seed, ic.flags & ICFLAG_KSPHERE);
+		if (zetaFT == NULL)
+			generateRealization(scalarFT, 0., tk1, (unsigned int) ic.seed, ic.flags & ICFLAG_KSPHERE);
+		else
+		{
+			gsl_interp_accel * acc = gsl_interp_accel_alloc();
+	        for (kFT.first(); kFT.test(); kFT.next())
+            {
+        	    double tmp = kFT.coord(0)*kFT.coord(0);
+	            if (kFT.coord(1) < (sim.numpts/2) + 1)
+                    tmp += kFT.coord(1)*kFT.coord(1);
+                else
+        	        tmp += (sim.numpts-kFT.coord(1))*(sim.numpts-kFT.coord(1));
+	            if (kFT.coord(2) < (sim.numpts/2) + 1)
+                    tmp += kFT.coord(2)*kFT.coord(2);
+                else
+        	        tmp += (sim.numpts-kFT.coord(2))*(sim.numpts-kFT.coord(2));
+	            if (tmp > 0)
+                {
+                	tmp = 2. * M_PI * sqrt(tmp);
+        	        scalarFT(kFT) = (*zetaFT)(kFT) * gsl_spline_eval(tk1, tmp, acc);
+	            }
+                else
+                	scalarFT(kFT) = Cplx(0.,0.);
+			}
+			gsl_interp_accel_free(acc);
+		}
+
 		plan_source->execute(FFT_BACKWARD);
 
 		gsl_spline_free(tk1);
@@ -207,12 +223,13 @@ void projection_T00_project(background & class_background, perturbs & class_pert
 //   fourpiG           4 pi G (in code units)
 //   a                 scale factor
 //   coeff             multiplicative coefficient (default 1)
+//   zetaFT            reference to Fourier image of zeta (default NULL)
 //
 // Returns:
 // 
 //////////////////////////
 
-void prepareFTchiLinear(background & class_background, perturbs & class_perturbs, Field<Cplx> & scalarFT, metadata & sim, icsettings & ic, cosmology & cosmo, const double fourpiG, double a, double coeff = 1.)
+void prepareFTchiLinear(background & class_background, perturbs & class_perturbs, Field<Cplx> & scalarFT, metadata & sim, icsettings & ic, cosmology & cosmo, const double fourpiG, double a, double coeff = 1., Field<Cplx> * zetaFT = NULL)
 {
 	gsl_spline * tk1 = NULL;
 	gsl_spline * tk2 = NULL;
@@ -224,114 +241,113 @@ void prepareFTchiLinear(background & class_background, perturbs & class_perturbs
 
 	chi = (double *) malloc(tk1->size * sizeof(double));
 
-	for (i = 0; i < tk1->size; i++)
+	for (i = 0; i < (int) tk1->size; i++)
 		chi[i] = (tk2->y[i] - tk1->y[i]) * coeff * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i];
 
-	if (sim.gr_flag == 0) // add gauge correction for N-body gauge
+	gsl_spline_free(tk2);
+
+	if (sim.gr_flag == 0 && a < 0.99) // add gauge correction for N-body gauge
 	{
-		double * l1 = (double *) malloc(tk1->size * sizeof(double));
-		double * l2 = (double *) malloc(tk1->size * sizeof(double));
-		double * l3 = (double *) malloc(tk1->size * sizeof(double));
-		double * l4 = (double *) malloc(tk1->size * sizeof(double));
-		double * l5 = (double *) malloc(tk1->size * sizeof(double));
-		double Hconf1 = Hconf(0.99 * a, fourpiG, cosmo);
-		double Hconf2 = Hconf(0.995 * a, fourpiG, cosmo);
-		double Hconf3 = Hconf(a, fourpiG, cosmo);
-		double Hconf4 = Hconf(1.005 * a, fourpiG, cosmo);
-		double Hconf5 = Hconf(1.01 * a, fourpiG, cosmo);
+		gsl_spline_free(tk1);
+
+		double rescale = Hconf(a, fourpiG, cosmo);
+
+		double * a2dHda = (double *) malloc(5 * sizeof(double));
+
+		for (i = 0; i < 5; i++)
+			a2dHda[i] = a * a * gsl_spline_eval_deriv(cosmo.Hspline, a * (0.99 + 0.005 * (double) i), cosmo.acc_H) * (0.99 + 0.005 * (double) i) * (0.99 + 0.005 * (double) i);
+
+		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "eta", sim.boxsize, (1. / (1.005 * a)) - 1., cosmo.h);
+
+		double * deriv1 = (double *) malloc(tk1->size * sizeof(double));
+		double * deriv2 = (double *) malloc(tk1->size * sizeof(double));
+		
+		for (i = 0; i < tk1->size; i++)
+		{
+			deriv1[i] = (1. - (3. * rescale + a2dHda[2]) / a2dHda[3]) * tk2->y[i] / 1.5;
+			deriv2[i] = -rescale * tk2->y[i] / a2dHda[3] / 0.75;
+		}
+			
+		gsl_spline_free(tk1);
+		gsl_spline_free(tk2);
+
+		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "eta", sim.boxsize, (1. / (0.995 * a)) - 1., cosmo.h);
+		
+		for (i = 0; i < tk1->size; i++)
+		{
+			deriv1[i] -= (1. - (3. * rescale + a2dHda[2]) / a2dHda[1]) * tk2->y[i] / 1.5;
+			deriv2[i] -= rescale * tk2->y[i] / a2dHda[1] / 0.75;
+		}
+			
+		gsl_spline_free(tk1);
+		gsl_spline_free(tk2);
+
+		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "eta", sim.boxsize, (1. / (1.01 * a)) - 1., cosmo.h);
+		
+		for (i = 0; i < tk1->size; i++)
+		{
+			deriv1[i] -= (1. - (3. * rescale + a2dHda[2]) / a2dHda[4]) * tk2->y[i] / 12.;
+			deriv2[i] += rescale * tk2->y[i] / a2dHda[4] / 12.;
+		}
+			
+		gsl_spline_free(tk1);
+		gsl_spline_free(tk2);
+
+		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "eta", sim.boxsize, (1. / (0.99 * a)) - 1., cosmo.h);
 
 		for (i = 0; i < tk1->size; i++)
-			l3[i] = -tk1->y[i];
+		{
+			deriv1[i] += (1. - (3. * rescale + a2dHda[2]) / a2dHda[0]) * tk2->y[i] / 12.;
+			deriv2[i] += rescale * tk2->y[i] / a2dHda[0] / 12.;
+		}
 
 		gsl_spline_free(tk1);
 		gsl_spline_free(tk2);
 
-		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, NULL, sim.boxsize, (1. / (1.005 * a)) - 1., cosmo.h);
+		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "eta", sim.boxsize, (1. / a) - 1., cosmo.h);
 
 		for (i = 0; i < tk1->size; i++)
-			l4[i] = -tk1->y[i];
+		{
+			deriv2[i] += 2.5 * rescale * tk2->y[i] / a2dHda[2];
+			chi[i] -= 3. * rescale * (tk2->y[i] + 200. * deriv1[i] + 40000. * deriv2[i]) * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i] / tk1->x[i] / tk1->x[i];
+		}
 
-		gsl_spline_free(tk1);
+		free(deriv1);
+		free(deriv2);
+		free(a2dHda);
+
 		gsl_spline_free(tk2);
-
-		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "tot", sim.boxsize, (1. / (1.005 * a)) - 1., cosmo.h);
-
-		for (i = 0; i < tk1->size; i++)
-			l4[i] -= tk2->y[i] * Hconf4 / tk2->x[i] / tk2->x[i];
-
-		gsl_spline_free(tk1);
-		gsl_spline_free(tk2);
-
-		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, NULL, sim.boxsize, (1. / (1.01 * a)) - 1., cosmo.h);
-
-		for (i = 0; i < tk1->size; i++)
-			l5[i] = -tk1->y[i];
-
-		gsl_spline_free(tk1);
-		gsl_spline_free(tk2);
-
-		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "tot", sim.boxsize, (1. / (1.01 * a)) - 1., cosmo.h);
-
-		for (i = 0; i < tk1->size; i++)
-			l5[i] -= tk2->y[i] * Hconf5 / tk2->x[i] / tk2->x[i];
-
-		gsl_spline_free(tk1);
-		gsl_spline_free(tk2);
-
-		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, NULL, sim.boxsize, (1. / (0.995 * a)) - 1., cosmo.h);
-
-		for (i = 0; i < tk1->size; i++)
-			l2[i] = -tk1->y[i];
-
-		gsl_spline_free(tk1);
-		gsl_spline_free(tk2);
-
-		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "tot", sim.boxsize, (1. / (0.995 * a)) - 1., cosmo.h);
-
-		for (i = 0; i < tk1->size; i++)
-			l2[i] -= tk2->y[i] * Hconf2 / tk2->x[i] / tk2->x[i];
-
-		gsl_spline_free(tk1);
-		gsl_spline_free(tk2);
-
-		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, NULL, sim.boxsize, (1. / (0.99 * a)) - 1., cosmo.h);
-
-		for (i = 0; i < tk1->size; i++)
-			l1[i] = -tk1->y[i];
-
-		gsl_spline_free(tk1);
-		gsl_spline_free(tk2);
-
-		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "tot", sim.boxsize, (1. / (0.99 * a)) - 1., cosmo.h);
-
-		for (i = 0; i < tk1->size; i++)
-			l1[i] -= tk2->y[i] * Hconf1 / tk2->x[i] / tk2->x[i];
-
-		gsl_spline_free(tk1);
-		gsl_spline_free(tk2);
-
-		loadTransferFunctions(class_background, class_perturbs, tk1, tk2, "tot", sim.boxsize, (1. / a) - 1., cosmo.h);
-
-		for (i = 0; i < tk1->size; i++)
-			l3[i] -= tk2->y[i] * Hconf3 / tk2->x[i] / tk2->x[i];
-
-		Hconf1 = (8.0802 * Hconf4 - 7.9202 * Hconf2 - 1.0201 * Hconf5 + 0.9801 * Hconf1) / 12.;
-
-		for (i = 0; i < tk1->size; i++)
-			chi[i] += 10000. * Hconf3 * (Hconf1 * (8. * l4[i] - 8. * l2[i] - l5[i] + l1[i]) + Hconf3 * (16. * l4[i] + 16. * l2[i] - 30. * l3[i] - l5[i] - l1[i])) * M_PI * sqrt(Pk_primordial(tk1->x[i] * cosmo.h / sim.boxsize, ic) / tk1->x[i]) / tk1->x[i] / tk1->x[i] / tk1->x[i];
-
-		free(l1);
-		free(l2);
-		free(l3);
-		free(l4);
-		free(l5);
 	}
 
-	gsl_spline_free(tk2);
 	tk2 = gsl_spline_alloc(gsl_interp_cspline, tk1->size);
 	gsl_spline_init(tk2, tk1->x, chi, tk1->size);
 
-	generateRealization(scalarFT, 0., tk2, (unsigned int) ic.seed, ic.flags & ICFLAG_KSPHERE, 0);
+	if (zetaFT == NULL)
+		generateRealization(scalarFT, 0., tk2, (unsigned int) ic.seed, ic.flags & ICFLAG_KSPHERE, 0);
+	else
+	{
+		gsl_interp_accel * acc = gsl_interp_accel_alloc();
+		for (k.first(); k.test(); k.next())
+		{
+			double tmp = k.coord(0)*k.coord(0);
+	        if (k.coord(1) < (sim.numpts/2) + 1)
+				tmp += k.coord(1)*k.coord(1);
+			else
+			    tmp += (sim.numpts-k.coord(1))*(sim.numpts-k.coord(1));
+	        if (k.coord(2) < (sim.numpts/2) + 1)
+				tmp += k.coord(2)*k.coord(2);
+			else
+			    tmp += (sim.numpts-k.coord(2))*(sim.numpts-k.coord(2));
+	        if (tmp > 0)
+			{
+				tmp = 2. * M_PI * sqrt(tmp);
+	            scalarFT(k) = (*zetaFT)(k) * gsl_spline_eval(tk2, tmp, acc);
+			}
+			else
+				scalarFT(k) = Cplx(0.,0.);
+		}
+		gsl_interp_accel_free(acc);
+	}
 
 	gsl_spline_free(tk1);
 	gsl_spline_free(tk2);

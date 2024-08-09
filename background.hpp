@@ -4,9 +4,9 @@
 // 
 // code components related to background evolution
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: September 2018
+// Last modified: August 2024
 //
 //////////////////////////
 
@@ -19,6 +19,11 @@
 double FermiDiracIntegrand(double q, void * w)
 {
 	return q * q * sqrt(q * q + *(double *)w) / (exp(q) + 1.0l);
+}
+
+double FermiDiracPressureIntegrand(double q, void * w)
+{
+	return q * q * q * q / sqrt(q * q + *(double *)w) / (exp(q) + 1.0l);
 }
 
 //////////////////////////
@@ -42,6 +47,35 @@ double FermiDiracIntegral(double &w)
 	size_t n;
 	
 	f.function = &FermiDiracIntegrand;
+	f.params = &w;
+		
+	gsl_integration_qng(&f, 0.0l, 24.0l, 5.0e-7, 1.0e-7, &result, &err, &n);
+	
+	return result;
+}
+
+
+//////////////////////////
+// FermiDiracPressureIntegral
+//////////////////////////
+// Description:
+//   computes the pressure integral of the relativistic Fermi-Dirac distribution
+// 
+// Arguments:
+//   w          parameter in the F-D distribution, "(m a / kB T)^2"
+//
+// Returns: value for the integral
+// 
+//////////////////////////
+
+double FermiDiracPressureIntegral(double &w)
+{
+	double result;
+	gsl_function f;
+	double err;
+	size_t n;
+	
+	f.function = &FermiDiracPressureIntegrand;
 	f.params = &w;
 		
 	gsl_integration_qng(&f, 0.0l, 24.0l, 5.0e-7, 1.0e-7, &result, &err, &n);
@@ -102,7 +136,6 @@ double bg_ncdm(const double a, const cosmology cosmo, const int p)
 
 double bg_ncdm(const double a, const cosmology cosmo)
 {
-	double w;
 	static double result = -1.0;
 	static double a_prev = -1.0;
 	
@@ -116,6 +149,36 @@ double bg_ncdm(const double a, const cosmology cosmo)
 	}
 	
 	return result;
+}
+
+
+//////////////////////////
+// pressure_ncdm
+//////////////////////////
+// Description:
+//   computes the background pressure for one ncdm species by integrating the relativistic
+//   Fermi-Dirac distribution
+// 
+// Arguments:
+//   a          scale factor at which to compute the background model
+//   cosmo      structure containing the cosmological parameters
+//   p          index of the ncdm species
+//
+// Returns: value for the background pressure
+// 
+//////////////////////////
+
+double pressure_ncdm(const double a, const cosmology cosmo, const int p)
+{
+	if (p < 0 || p >= cosmo.num_ncdm)
+		return 0;
+	else
+	{
+		double w = a * cosmo.m_ncdm[p] / (pow(cosmo.Omega_g * cosmo.h * cosmo.h / C_PLANCK_LAW, 0.25) * cosmo.T_ncdm[p] * C_BOLTZMANN_CST);
+		w *= w;
+		
+		return FermiDiracPressureIntegral(w) * cosmo.Omega_ncdm[p] * pow(cosmo.Omega_g * cosmo.h * cosmo.h / C_PLANCK_LAW, 0.25) * cosmo.T_ncdm[p] * C_BOLTZMANN_CST / cosmo.m_ncdm[p] / C_FD_NORM / a / 3.;
+	}
 }
 
 
@@ -135,8 +198,13 @@ double bg_ncdm(const double a, const cosmology cosmo)
 //////////////////////////
 
 double Hconf(const double a, const double fourpiG, const cosmology cosmo)
-{	
-	return sqrt((2. * fourpiG / 3.) * (((cosmo.Omega_cdm + cosmo.Omega_b + bg_ncdm(a, cosmo)) / a) + (cosmo.Omega_Lambda * a * a) + (cosmo.Omega_rad / a / a) + (cosmo.Omega_fld * exp(3. * cosmo.wa_fld * (a - 1.)) / pow(a, 1. + 3. * (cosmo.w0_fld + cosmo.wa_fld)))));
+{
+#ifdef HAVE_CLASS
+	if (cosmo.Hspline != NULL && a <= 1.01)
+		return a*gsl_spline_eval(cosmo.Hspline, a, cosmo.acc_H);
+	else
+#endif
+		return sqrt((2. * fourpiG / 3.) * (((cosmo.Omega_cdm + cosmo.Omega_b + bg_ncdm(a, cosmo)) / a) + (cosmo.Omega_Lambda * a * a) + (cosmo.Omega_rad / a / a) + (cosmo.Omega_fld * exp(3. * cosmo.wa_fld * (a - 1.)) / pow(a, 1. + 3. * (cosmo.w0_fld + cosmo.wa_fld)))));
 }
 
 
@@ -199,17 +267,26 @@ double particleHorizonIntegrand(double sqrta, void * cosmo)
 
 double particleHorizon(const double a, const double fourpiG, cosmology & cosmo)
 {
-	double result;
-	gsl_function f;
-	double err;
-	size_t n;
+#ifdef HAVE_CLASS
+	if (cosmo.tauspline != NULL && a <= 1.01)
+	{
+		return gsl_spline_eval(cosmo.tauspline, a, cosmo.acc_tau);
+	}
+	else
+#endif
+	{
+		double result;
+		gsl_function f;
+		double err;
+		size_t n;
 	
-	f.function = &particleHorizonIntegrand;
-	f.params = &cosmo;
+		f.function = &particleHorizonIntegrand;
+		f.params = &cosmo;
 	
-	gsl_integration_qng(&f, sqrt(a) * 1.0e-7, sqrt(a), 5.0e-7, 1.0e-7, &result, &err, &n);
+		gsl_integration_qng(&f, sqrt(a) * 1.0e-7, sqrt(a), 5.0e-7, 1.0e-7, &result, &err, &n);
 	
-	return result / sqrt(fourpiG);
+		return result / sqrt(fourpiG);
+	}
 }
 
 #endif
