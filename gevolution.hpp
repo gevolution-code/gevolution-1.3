@@ -6,8 +6,10 @@
 // and relativistic free-streaming particles (gevolution)
 //
 // 1. Suite of Fourier-based methods for the computation of the
-//    relativistic scalar (Phi, Phi-Psi) and vector modes [see J. Adamek,
-//    R. Durrer, and M. Kunz, Class. Quant. Grav. 31, 234006 (2014)]
+//    relativistic scalar (Phi, Phi-Psi), vector, and tensor modes [see J. Adamek,
+//    R. Durrer, and M. Kunz, Class. Quant. Grav. 31, 234006 (2014); J. Adamek,
+//    R. Durrer, and M. Kunz, JCAP 1607, 053 (2016); Ø. Christiansen, J. Adamek,
+//    F. Hassani, and D. F. Mota, arXiv:2401.02409]
 //
 // 2. Collection of "update position" and "update velocity/momentum" methods
 //    [see J. Adamek, D. Daverio, R. Durrer, and M. Kunz, JCAP 1607, 053 (2016)]

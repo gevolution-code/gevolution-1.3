@@ -1112,7 +1112,13 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		for (i = 0; i < 3; i++)
 			pptr[i] = ic.metricfile[i];
 		
-		parseParameter(params, numparam, "metric file", pptr, i);
+		if (!parseParameter(params, numparam, "metric file", pptr, i) && (sim.gr_flag > 0 || sim.radiation_flag > 0 || sim.fluid_flag > 0))
+		{
+			COUT << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": no metric file specified for IC generator = RELIC" << endl;
+#ifdef LATFIELD2_HPP
+			parallel.abortForce();
+#endif
+		}
 
 		for (i = 0; i < 2; i++)
 			pptr[i] = ic.densityfile[i];

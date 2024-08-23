@@ -115,6 +115,8 @@ void projection_T00_project(background & class_background, perturbs & class_pert
 			Omega_ncdm += rescale;
 			Omegaw_ncdm += pressure_ncdm(a, cosmo, p);
 
+			COUT << "ncdm species " << p << " has Omega_ncdm = " << Omega_ncdm << " and effective w = " << Omegaw_ncdm / Omega_ncdm << std::endl;
+
 			if (delta == NULL)
 			{
 				n = tk1->size;

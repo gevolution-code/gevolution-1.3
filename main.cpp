@@ -55,6 +55,9 @@
 #ifdef ICGEN_FALCONIC
 #include "fcn/togevolution.hpp"
 #endif
+#ifdef ICGEN_RELIC
+#include "ic_relic.hpp"
+#endif
 #include "radiation.hpp"
 #include "parser.hpp"
 #include "output.hpp"
@@ -311,11 +314,11 @@ int main(int argc, char **argv)
 #endif		
 		params, numparam); // generates ICs on the fly
 	else if (ic.generator == ICGEN_READ_FROM_DISK)
-		readIC(sim, ic, cosmo, fourpiG, a, tau, dtau, dtau_old, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, cycle, snapcount, pkcount, restartcount, IDbacklog);
-//#ifdef ICGEN_RELIC
-//	else if (ic.generator == ICGEN_RELIC)
-//		generateIC_2ndorder(sim, ic, cosmo, fourpiG, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, zetaFT, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, params, numparam);
-//#endif
+		readIC(sim, ic, cosmo, fourpiG, a, tau, dtau, dtau_old, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, zetaFT, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, cycle, snapcount, pkcount, restartcount, IDbacklog);
+#ifdef ICGEN_RELIC
+	else if (ic.generator == ICGEN_RELIC)
+		generateIC_relic(sim, ic, cosmo, fourpiG, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, zetaFT, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, params, numparam);
+#endif
 #ifdef ICGEN_PREVOLUTION
 	else if (ic.generator == ICGEN_PREVOLUTION)
 		generateIC_prevolution(sim, ic, cosmo, fourpiG, a, tau, dtau, dtau_old, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, params, numparam);
@@ -391,6 +394,35 @@ int main(int argc, char **argv)
 		loadBGFunctions(class_background, cosmo.tauspline, "conf. time [Mpc]", sim.z_in, cosmo.h/sim.boxsize);
 		cosmo.acc_tau = gsl_interp_accel_alloc();
 		COUT << "Initial Hubble rate = " << Hconf(a, fourpiG, cosmo2) << " (gevolution), " << Hconf(a, fourpiG, cosmo) << " (CLASS) -- using CLASS" << endl;
+		if ((ic.generator == ICGEN_RELIC || ic.generator == ICGEN_READ_FROM_DISK) && zetaFT != NULL)  // zetaFT contains phi(k) at this point, so we need to divide out the transfer function
+		{
+			gsl_spline * tk1 = NULL;
+			gsl_spline * tk2 = NULL;
+			gsl_interp_accel * acc = gsl_interp_accel_alloc();
+			loadTransferFunctions(class_background, class_perturbs, tk1, tk2, NULL, sim.boxsize, (1. / a) - 1., cosmo.h);
+			for (kFT.first(); kFT.test(); kFT.next())
+			{
+				tmp = kFT.coord(0)*kFT.coord(0);
+				if (kFT.coord(1) < (sim.numpts/2) + 1)
+					tmp += kFT.coord(1)*kFT.coord(1);
+				else
+					tmp += (sim.numpts-kFT.coord(1))*(sim.numpts-kFT.coord(1));
+				if (kFT.coord(2) < (sim.numpts/2) + 1)
+					tmp += kFT.coord(2)*kFT.coord(2);
+                else
+                	tmp += (sim.numpts-kFT.coord(2))*(sim.numpts-kFT.coord(2));
+				if (tmp > 0)
+				{
+					tmp = 2. * M_PI * sqrt(tmp);
+					(*zetaFT)(kFT) /= -gsl_spline_eval(tk1, tmp, acc) * numpts3d * M_PI * sqrt(Pk_primordial(tmp * cosmo.h / sim.boxsize, ic) / tmp) / tmp;
+				}
+				else
+					(*zetaFT)(kFT) = Cplx(0.,0.);
+			}
+			gsl_interp_accel_free(acc);
+			gsl_spline_free(tk1);
+			gsl_spline_free(tk2);
+		}
 		if (sim.gr_flag > 0 && a < 1. / (sim.z_switch_linearchi + 1.) && (ic.generator == ICGEN_BASIC || (ic.generator == ICGEN_READ_FROM_DISK && cycle == 0)))
 		{
 			prepareFTchiLinear(class_background, class_perturbs, scalarFT, sim, ic, cosmo, fourpiG, a, 1., zetaFT);
