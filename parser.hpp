@@ -6,7 +6,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2024
+// Last modified: September 2024
 //
 //////////////////////////
 
@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <map>
+#include <tuple>
 #include "metadata.hpp"
 
 using namespace std;
@@ -1194,6 +1196,8 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 	sim.numbins = 0;
 	sim.num_snapshot = MAX_OUTPUTS;
 	sim.num_lightcone = 0;
+	sim.num_IDlogs = 0;
+	sim.IDlog_mapping[0] = 0;
 	sim.num_restart = MAX_OUTPUTS;
 	for (i = 0; i < MAX_PCL_SPECIES; i++) sim.tracer_factor[i] = 1;
 	sim.Cf = 1.;
@@ -1465,6 +1469,8 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 	}
 	else
 	{
+		std::map<std::tuple<double, double, double, double>, int> lightcone_to_IDlog_mapping;
+
 		for (sim.num_lightcone = 0; sim.num_lightcone < MAX_OUTPUTS; sim.num_lightcone++)
 		{
 			sprintf(par_string, "lightcone %d vertex", sim.num_lightcone);
@@ -1595,9 +1601,31 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 						}
 					}
 				}
+
+				std::tuple<double, double, double, double> lightcone_key(sim.lightcone[sim.num_lightcone].vertex[0], sim.lightcone[sim.num_lightcone].vertex[1], sim.lightcone[sim.num_lightcone].vertex[2], sim.lightcone[sim.num_lightcone].z);
+
+				if (lightcone_to_IDlog_mapping.find(lightcone_key) == lightcone_to_IDlog_mapping.end())
+				{
+					lightcone_to_IDlog_mapping[lightcone_key] = sim.num_IDlogs;
+					sim.IDlog_mapping[sim.num_lightcone] = sim.num_IDlogs;
+					sim.num_IDlogs++;
+				}
+				else
+				{
+					sim.IDlog_mapping[sim.num_lightcone] = lightcone_to_IDlog_mapping[lightcone_key];
+				}
 			}
 			else break;
 		}
+	}
+
+	if (sim.num_IDlogs == 0)
+	{
+		sim.num_IDlogs = 1;
+	}
+	else
+	{
+		COUT << " For light cone consistency, particle IDs will be logged for " << sim.num_IDlogs << " distinct observer(s)." << endl;
 	}
 	
 	i = MAX_PCL_SPECIES;

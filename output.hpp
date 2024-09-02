@@ -6,7 +6,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2024
+// Last modified: September 2024
 //
 //////////////////////////
 
@@ -510,7 +510,7 @@ void writeSnapshots(metadata & sim, cosmology & cosmo, const double fourpiG, con
 // 
 //////////////////////////
 
-void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, const double a, const double tau, const double dtau, const double dtau_old, const double maxvel, const int cycle, string h5filename, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_cdm, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_b, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_ncdm, Field<Real> * phi, Field<Real> * chi, Field<Real> * Bi, Field<Real> * Sij, Field<Cplx> * BiFT, Field<Cplx> * SijFT, PlanFFT<Cplx> * plan_Bi, PlanFFT<Cplx> * plan_Sij, int & done_hij, set<long> * IDbacklog)
+void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, const double a, const double tau, const double dtau, const double dtau_old, const double maxvel, const int cycle, string h5filename, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_cdm, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_b, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_ncdm, Field<Real> * phi, Field<Real> * chi, Field<Real> * Bi, Field<Real> * Sij, Field<Cplx> * BiFT, Field<Cplx> * SijFT, PlanFFT<Cplx> * plan_Bi, PlanFFT<Cplx> * plan_Sij, int & done_hij, set<long> ** IDbacklog)
 {
 	int i, j, n, p;
 	double d;
@@ -522,7 +522,7 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 	char buffer[268];
 	FILE * outfile = NULL;
 	gadget2_header hdr;
-	set<long> IDprelog[MAX_PCL_SPECIES];
+	set<long> IDprelog[sim.num_IDlogs][MAX_PCL_SPECIES];
 	long * IDcombuf = NULL;
 	long * IDcombuf2 = NULL;
 	Site xsim;
@@ -1571,12 +1571,12 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 				sprintf(filename, "_%04d", cycle);
 
 			if (sim.tracer_factor[0] > 0)
-				pcls_cdm->saveGadget2(h5filename + filename + "_cdm", hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[0], IDprelog[0], phi, sim.tracer_factor[0]); 
+				pcls_cdm->saveGadget2(h5filename + filename + "_cdm", hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][0], IDprelog[sim.IDlog_mapping[i]][0], phi, sim.tracer_factor[0]);
 
 			if (sim.baryon_flag && sim.tracer_factor[1] > 0)
 			{
 				hdr.mass[1] = (double) sim.tracer_factor[1] * C_RHO_CRIT * cosmo.Omega_b * sim.boxsize * sim.boxsize * sim.boxsize / sim.numpcl[1] / GADGET_MASS_CONVERSION;
-				pcls_b->saveGadget2(h5filename + filename + "_b", hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[1], IDprelog[1], phi, sim.tracer_factor[1]);
+				pcls_b->saveGadget2(h5filename + filename + "_b", hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][1], IDprelog[sim.IDlog_mapping[i]][1], phi, sim.tracer_factor[1]);
 			}
 			
 			for (p = 0; p < cosmo.num_ncdm; p++)
@@ -1584,7 +1584,7 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 				if (sim.numpcl[1+sim.baryon_flag+p] == 0 || sim.tracer_factor[p+1+sim.baryon_flag] == 0) continue;
 				sprintf(buffer, "_ncdm%d", p);
 				hdr.mass[1] = (double) sim.tracer_factor[p+1+sim.baryon_flag] * C_RHO_CRIT * cosmo.Omega_ncdm[p] * sim.boxsize * sim.boxsize * sim.boxsize / sim.numpcl[p+1+sim.baryon_flag] / GADGET_MASS_CONVERSION;
-				pcls_ncdm[p].saveGadget2(h5filename + filename + buffer, hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[p+1+sim.baryon_flag], IDprelog[p+1+sim.baryon_flag], phi, sim.tracer_factor[p+1+sim.baryon_flag]);
+				pcls_ncdm[p].saveGadget2(h5filename + filename + buffer, hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][p+1+sim.baryon_flag], IDprelog[sim.IDlog_mapping[i]][p+1+sim.baryon_flag], phi, sim.tracer_factor[p+1+sim.baryon_flag]);
 			}
 		}
 	}
@@ -1593,132 +1593,135 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 	delete[] outbuf;
 #endif
 
-	for (p = 0; p <= cosmo.num_ncdm + sim.baryon_flag; p++)
+	for (int l = 0; l < sim.num_IDlogs; l++)
 	{
-		IDbacklog[p] = IDprelog[p];
-		IDprelog[p].clear();
-
-		n = IDbacklog[p].size();
-		// dim 0 send/rec
-		if (parallel.grid_rank()[0] % 2 == 0)
+		for (p = 0; p <= cosmo.num_ncdm + sim.baryon_flag; p++)
 		{
-			parallel.send_dim0<int>(n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-			parallel.receive_dim0<int>(i, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-			parallel.send_dim0<int>(n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
-			parallel.receive_dim0<int>(j, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
-		}
-		else
-		{
-			parallel.receive_dim0<int>(i, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
-			parallel.send_dim0<int>(n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
-			parallel.receive_dim0<int>(j, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-			parallel.send_dim0<int>(n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-		}
+			IDbacklog[l][p] = IDprelog[l][p];
+			IDprelog[l][p].clear();
 
-		if (n+i+j > 0)
-		{
-			IDcombuf = (long *) malloc((n+i+j) * sizeof(long));
-
-			n = 0;
-			for (std::set<long>::iterator it = IDbacklog[p].begin(); it != IDbacklog[p].end(); it++)
-				IDcombuf[n++] = *it;
-
+			n = IDbacklog[l][p].size();
+			// dim 0 send/rec
 			if (parallel.grid_rank()[0] % 2 == 0)
 			{
-				if (n > 0)
-					parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-				if (i > 0)
-					parallel.receive_dim0<long>(IDcombuf+n, i, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-				if (n > 0)
-					parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
-				if (j > 0)
-					parallel.receive_dim0<long>(IDcombuf+n+i, j, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				parallel.send_dim0<int>(n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+				parallel.receive_dim0<int>(i, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+				parallel.send_dim0<int>(n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				parallel.receive_dim0<int>(j, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
 			}
 			else
 			{
+				parallel.receive_dim0<int>(i, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				parallel.send_dim0<int>(n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				parallel.receive_dim0<int>(j, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+				parallel.send_dim0<int>(n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+			}
+
+			if (n+i+j > 0)
+			{
+				IDcombuf = (long *) malloc((n+i+j) * sizeof(long));
+
+				n = 0;
+				for (std::set<long>::iterator it = IDbacklog[l][p].begin(); it != IDbacklog[l][p].end(); it++)
+					IDcombuf[n++] = *it;
+
+				if (parallel.grid_rank()[0] % 2 == 0)
+				{
+					if (n > 0)
+						parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+					if (i > 0)
+						parallel.receive_dim0<long>(IDcombuf+n, i, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+					if (n > 0)
+						parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+					if (j > 0)
+						parallel.receive_dim0<long>(IDcombuf+n+i, j, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				}
+				else
+				{
+					if (i > 0)
+						parallel.receive_dim0<long>(IDcombuf+n, i, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+					if (n > 0)
+						parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+					if (j > 0)
+						parallel.receive_dim0<long>(IDcombuf+n+i, j, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+					if (n > 0)
+						parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+				}
+
+				n += i + j;
+
+				for (i = IDbacklog[l][p].size(); i < n; i++)
+					IDbacklog[l][p].insert(IDcombuf[i]);
+			}
+
+			// dim 1 send/rec
+			if (parallel.grid_rank()[1] % 2 == 0)
+			{
+				parallel.send_dim1<int>(n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+				parallel.receive_dim1<int>(i, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+				parallel.send_dim1<int>(n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+				parallel.receive_dim1<int>(j, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+				if (n > 0)
+					parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
 				if (i > 0)
-					parallel.receive_dim0<long>(IDcombuf+n, i, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				{
+					IDcombuf2 = (long *) malloc(i * sizeof(long));
+					parallel.receive_dim1<long>(IDcombuf2, i, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+					while (i > 0)
+						IDbacklog[l][p].insert(IDcombuf2[--i]);
+					free(IDcombuf2);
+				}
+
 				if (n > 0)
-					parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				{
+					parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+					free(IDcombuf);
+				}
+
 				if (j > 0)
-					parallel.receive_dim0<long>(IDcombuf+n+i, j, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+				{
+					IDcombuf2 = (long *) malloc(j * sizeof(long));
+					parallel.receive_dim1<long>(IDcombuf2, j, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+					while (j > 0)
+						IDbacklog[l][p].insert(IDcombuf2[--j]);
+					free(IDcombuf2);
+				}
+			}
+			else
+			{
+				parallel.receive_dim1<int>(i, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+				parallel.send_dim1<int>(n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+				parallel.receive_dim1<int>(j, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+				parallel.send_dim1<int>(n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+				if (i > 0)
+				{
+					IDcombuf2 = (long *) malloc(i * sizeof(long));
+					parallel.receive_dim1<long>(IDcombuf2, i, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+					while (i > 0)
+						IDbacklog[l][p].insert(IDcombuf2[--i]);
+					free(IDcombuf2);
+				}
+
 				if (n > 0)
-					parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-			}
+					parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
 
-			n += i + j;
+				if (j > 0)
+				{
+					IDcombuf2 = (long *) malloc(j * sizeof(long));
+					parallel.receive_dim1<long>(IDcombuf2, j, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+					while (j > 0)
+						IDbacklog[l][p].insert(IDcombuf2[--j]);
+					free(IDcombuf2);
+				}
 
-			for (i = IDbacklog[p].size(); i < n; i++)
-				IDbacklog[p].insert(IDcombuf[i]);
-		}
-
-		// dim 1 send/rec
-		if (parallel.grid_rank()[1] % 2 == 0)
-		{
-			parallel.send_dim1<int>(n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-			parallel.receive_dim1<int>(i, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-			parallel.send_dim1<int>(n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-			parallel.receive_dim1<int>(j, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-
-			if (n > 0)
-				parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-
-			if (i > 0)
-			{
-				IDcombuf2 = (long *) malloc(i * sizeof(long));
-				parallel.receive_dim1<long>(IDcombuf2, i, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-				while (i > 0)
-					IDbacklog[p].insert(IDcombuf2[--i]);
-				free(IDcombuf2);
-			}
-
-			if (n > 0)
-			{
-				parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-				free(IDcombuf);
-			}
-
-			if (j > 0)
-			{
-				IDcombuf2 = (long *) malloc(j * sizeof(long));
-				parallel.receive_dim1<long>(IDcombuf2, j, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-				while (j > 0)
-					IDbacklog[p].insert(IDcombuf2[--j]);
-				free(IDcombuf2);
-			}
-		}
-		else
-		{
-			parallel.receive_dim1<int>(i, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-			parallel.send_dim1<int>(n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-			parallel.receive_dim1<int>(j, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-			parallel.send_dim1<int>(n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-
-			if (i > 0)
-			{
-				IDcombuf2 = (long *) malloc(i * sizeof(long));
-				parallel.receive_dim1<long>(IDcombuf2, i, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-				while (i > 0)
-					IDbacklog[p].insert(IDcombuf2[--i]);
-				free(IDcombuf2);
-			}
-
-			if (n > 0)
-				parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-
-			if (j > 0)
-			{
-				IDcombuf2 = (long *) malloc(j * sizeof(long));
-				parallel.receive_dim1<long>(IDcombuf2, j, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-				while (j > 0)
-					IDbacklog[p].insert(IDcombuf2[--j]);
-				free(IDcombuf2);
-			}
-
-			if (n > 0)
-			{
-				parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-				free(IDcombuf);
+				if (n > 0)
+				{
+					parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+					free(IDcombuf);
+				}
 			}
 		}
 	}

@@ -6,7 +6,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2024
+// Last modified: September 2024
 //
 //////////////////////////
 
@@ -605,9 +605,9 @@ void loadTransferFunctions(const char * filename, gsl_spline * & tk_delta, gsl_s
 			for (ptr = line, i = 0; (ptr = strchr(ptr, ':')) != NULL; i++)
 			{
 				ptr++;
-				if (strncmp(ptr, kname, strlen(kname)+1) == 0) kcol = i;
-				else if (strncmp(ptr, tname, strlen(tname)+1) == 0) tcol = i;
-				else if (strncmp(ptr, dname, strlen(dname)+1) == 0) dcol = i;
+				if (strncmp(ptr, kname, strlen(kname)) == 0) kcol = i;
+				else if (strncmp(ptr, tname, strlen(tname)) == 0) tcol = i;
+				else if (strncmp(ptr, dname, strlen(dname)) == 0) dcol = i;
 			}
 			
 			if (kcol >= 0 && dcol >= 0 && tcol >= 0) break;
@@ -1745,13 +1745,15 @@ parameter * params, int & numparam)
 	else					// initial displacements and velocities are set by individual transfer functions
 	{
 #ifdef HAVE_CLASS
-		initializeCLASSstructures(sim, ic, cosmo, class_background, class_perturbs, params, numparam);
-
-		loadBGFunctions(class_background, cosmo.Hspline, "H [1/Mpc]", 1.05 * sim.z_in + 0.05, sim.boxsize/cosmo.h);
-		cosmo.acc_H = gsl_interp_accel_alloc();
-
 		if (ic.tkfile[0] == '\0')
+		{
+			initializeCLASSstructures(sim, ic, cosmo, class_background, class_perturbs, params, numparam);
+
+			loadBGFunctions(class_background, cosmo.Hspline, "H [1/Mpc]", 1.05 * sim.z_in + 0.05, sim.boxsize/cosmo.h);
+			cosmo.acc_H = gsl_interp_accel_alloc();
+			
 			loadTransferFunctions(class_background, class_perturbs, tk_d1, tk_t1, NULL, sim.boxsize, sim.z_in, cosmo.h);
+		}
 		else
 #endif
 		loadTransferFunctions(ic.tkfile, tk_d1, tk_t1, NULL, sim.boxsize, cosmo.h);

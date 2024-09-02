@@ -28,7 +28,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2024
+// Last modified: September 2024
 //
 //////////////////////////
 
@@ -228,7 +228,11 @@ int main(int argc, char **argv)
 	Field<Real> * update_b_fields[3];
 	Field<Real> * update_ncdm_fields[3];
 	double f_params[5];
-	set<long> IDbacklog[MAX_PCL_SPECIES];
+	set<long> ** IDbacklog;
+
+	IDbacklog = new set<long> * [sim.num_IDlogs];
+	for (i = 0; i < sim.num_IDlogs; i++)
+		IDbacklog[i] = new set<long> [MAX_PCL_SPECIES];
 
 	Field<Real> phi;
 	Field<Real> source;
@@ -394,7 +398,11 @@ int main(int argc, char **argv)
 		loadBGFunctions(class_background, cosmo.tauspline, "conf. time [Mpc]", sim.z_in, cosmo.h/sim.boxsize);
 		cosmo.acc_tau = gsl_interp_accel_alloc();
 		COUT << "Initial Hubble rate = " << Hconf(a, fourpiG, cosmo2) << " (gevolution), " << Hconf(a, fourpiG, cosmo) << " (CLASS) -- using CLASS" << endl;
-		if ((ic.generator == ICGEN_RELIC || ic.generator == ICGEN_READ_FROM_DISK) && zetaFT != NULL)  // zetaFT contains phi(k) at this point, so we need to divide out the transfer function
+		if ((
+#ifdef ICGEN_RELIC
+			ic.generator == ICGEN_RELIC || 
+#endif
+			ic.generator == ICGEN_READ_FROM_DISK) && zetaFT != NULL)  // zetaFT contains phi(k) at this point, so we need to divide out the transfer function
 		{
 			gsl_spline * tk1 = NULL;
 			gsl_spline * tk2 = NULL;
@@ -986,6 +994,13 @@ int main(int argc, char **argv)
 
 if (zetaFT != NULL)
 	delete[] zetaFT;
+
+for (i = 0; i < sim.num_IDlogs; i++)
+{
+	if (IDbacklog[i] != NULL)
+		delete[] IDbacklog[i];
+}
+delete [] IDbacklog;
 
 #ifdef HAVE_CLASS
 	if (sim.radiation_flag > 0 || sim.fluid_flag > 0)

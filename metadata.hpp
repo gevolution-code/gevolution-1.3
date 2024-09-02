@@ -6,7 +6,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2024
+// Last modified: September 2024
 //
 //////////////////////////
 
@@ -230,6 +230,8 @@ struct metadata
 	int num_lightcone;
 	int num_restart;
 	int Nside[MAX_OUTPUTS][2];
+	int num_IDlogs;
+	int IDlog_mapping[MAX_OUTPUTS];
 	double Cf;
 	double movelimit;
 	double steplimit;

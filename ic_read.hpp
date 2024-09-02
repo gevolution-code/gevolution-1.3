@@ -6,7 +6,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2024
+// Last modified: September 2024
 //
 //////////////////////////
 
@@ -56,7 +56,7 @@
 // 
 //////////////////////////
 
-void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fourpiG, double & a, double & tau, double & dtau, double & dtau_old, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_cdm, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_b, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_ncdm, double * maxvel, Field<Real> * phi, Field<Real> * chi, Field<Real> * Bi, Field<Real> * source, Field<Real> * Sij, Field<Cplx> * zetaFT, Field<Cplx> * scalarFT, Field<Cplx> * BiFT, Field<Cplx> * SijFT, PlanFFT<Cplx> * plan_phi, PlanFFT<Cplx> * plan_chi, PlanFFT<Cplx> * plan_Bi, PlanFFT<Cplx> * plan_source, PlanFFT<Cplx> * plan_Sij, int & cycle, int & snapcount, int & pkcount, int & restartcount, set<long> * IDbacklog)
+void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fourpiG, double & a, double & tau, double & dtau, double & dtau_old, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_cdm, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_b, Particles_gevolution<part_simple,part_simple_info,part_simple_dataType> * pcls_ncdm, double * maxvel, Field<Real> * phi, Field<Real> * chi, Field<Real> * Bi, Field<Real> * source, Field<Real> * Sij, Field<Cplx> * zetaFT, Field<Cplx> * scalarFT, Field<Cplx> * BiFT, Field<Cplx> * SijFT, PlanFFT<Cplx> * plan_phi, PlanFFT<Cplx> * plan_chi, PlanFFT<Cplx> * plan_Bi, PlanFFT<Cplx> * plan_source, PlanFFT<Cplx> * plan_Sij, int & cycle, int & snapcount, int & pkcount, int & restartcount, set<long> ** IDbacklog)
 {
 	part_simple_info pcls_cdm_info;
 	part_simple_dataType pcls_cdm_dataType;
@@ -84,7 +84,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 	long count;
 	void * IDbuffer;
 	void * buf2;
-	set<long> IDlookup;
+	set<long> IDlookup[sim.num_IDlogs];
 	
 	filename.reserve(PARAM_MAX_LENGTH);
 	hdr.npart[1] = 0;
@@ -566,7 +566,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 						for (xPart.first(); xPart.test(); xPart.next())
 						{
 							for (auto it = (pcls_cdm->field())(xPart).parts.begin(); it != (pcls_cdm->field())(xPart).parts.end(); ++it)
-								IDlookup.insert((*it).ID);
+								IDlookup[sim.IDlog_mapping[i]].insert((*it).ID);
 						}
 					}
 					else if (p == 1 && sim.baryon_flag > 0)
@@ -574,7 +574,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 						for (xPart.first(); xPart.test(); xPart.next())
 						{
 							for (auto it = (pcls_b->field())(xPart).parts.begin(); it != (pcls_b->field())(xPart).parts.end(); ++it)
-								IDlookup.insert((*it).ID);
+								IDlookup[sim.IDlog_mapping[i]].insert((*it).ID);
 						}
 					}
 					else
@@ -582,7 +582,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 						for (xPart.first(); xPart.test(); xPart.next())
 						{
 							for (auto it = (pcls_ncdm[p-1-sim.baryon_flag].field())(xPart).parts.begin(); it != (pcls_ncdm[p-1-sim.baryon_flag].field())(xPart).parts.end(); ++it)
-								IDlookup.insert((*it).ID);
+								IDlookup[sim.IDlog_mapping[i]].insert((*it).ID);
 						}
 					}
 				
@@ -644,11 +644,11 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 							for (int j = 0; j < PCLBUFFER; j++)
 							{
 #if GADGET_ID_BYTES == 8
-								if (IDlookup.erase((long) *(((int64_t *) IDbuffer) + j)))
-									IDbacklog[p].insert((long) *(((int64_t *) IDbuffer) + j));
+								if (IDlookup[sim.IDlog_mapping[i]].erase((long) *(((int64_t *) IDbuffer) + j)))
+									IDbacklog[sim.IDlog_mapping[i]][p].insert((long) *(((int64_t *) IDbuffer) + j));
 #else
-								if (IDlookup.erase((long) *(((int32_t *) IDbuffer) + j)))
-									IDbacklog[p].insert((long) *(((int32_t *) IDbuffer) + j));
+								if (IDlookup[sim.IDlog_mapping[i]].erase((long) *(((int32_t *) IDbuffer) + j)))
+									IDbacklog[sim.IDlog_mapping[i]][p].insert((long) *(((int32_t *) IDbuffer) + j));
 #endif
 							}
 						
@@ -667,11 +667,11 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 							for (int j = 0; j < count; j++)
 							{
 #if GADGET_ID_BYTES == 8
-								if (IDlookup.erase((long) *(((int64_t *) IDbuffer) + j)))
-									IDbacklog[p].insert((long) *(((int64_t *) IDbuffer) + j));
+								if (IDlookup[sim.IDlog_mapping[i]].erase((long) *(((int64_t *) IDbuffer) + j)))
+									IDbacklog[sim.IDlog_mapping[i]][p].insert((long) *(((int64_t *) IDbuffer) + j));
 #else
-								if (IDlookup.erase((long) *(((int32_t *) IDbuffer) + j)))
-									IDbacklog[p].insert((long) *(((int32_t *) IDbuffer) + j));
+								if (IDlookup[sim.IDlog_mapping[i]].erase((long) *(((int32_t *) IDbuffer) + j)))
+									IDbacklog[sim.IDlog_mapping[i]][p].insert((long) *(((int32_t *) IDbuffer) + j));
 #endif
 							}
 						
@@ -684,7 +684,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 					if (parallel.isRoot() && lcfile != NULL)
 						fclose(lcfile);
 					
-					IDlookup.clear();
+					IDlookup[sim.IDlog_mapping[i]].clear();
 				}
 			}
 		}
