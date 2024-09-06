@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <algorithm>
+#include <vector>
 
 using namespace std;
 
@@ -522,9 +524,17 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 	char buffer[268];
 	FILE * outfile = NULL;
 	gadget2_header hdr;
-	set<long> IDprelog[sim.num_IDlogs][MAX_PCL_SPECIES];
-	long * IDcombuf = NULL;
+	vector<long> ** IDprelog;
+	int IDlog_multiplicity = 1;
+	int IDlog_sizes[9];
+	int IDlog_sizes_recv1[6];
+	int IDlog_sizes_send1[3];
+	int IDlog_sizes_recv0[10];
+	int IDlog_sizes_send0[5];
+	long * IDcombuf1 = NULL;
 	long * IDcombuf2 = NULL;
+	long * IDcombuf3 = NULL;
+	long * IDcombuf4 = NULL;
 	Site xsim;
 	int done_B = 0;
 #ifdef HAVE_HEALPIX
@@ -562,12 +572,20 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 #endif
 	
 	done_hij = 0;
+
+	IDprelog = new vector<long> * [sim.num_IDlogs];
 	
 	domain[0] = -0.5;
 	domain[1] = phi->lattice().coordSkip()[1] - 0.5;
 	domain[2] = phi->lattice().coordSkip()[0] - 0.5;
 	for (i = 0; i < 3; i++)
 		domain[i+3] = domain[i] + phi->lattice().sizeLocal(i) + 1.;
+
+	if ((domain[4]-domain[1]-1.0 > dtau * 2.0 * LIGHTCONE_IDCHECK_ZONE * sim.numpts) && (domain[5]-domain[2]-1.0 > dtau * 2.0 * LIGHTCONE_IDCHECK_ZONE * sim.numpts))
+		IDlog_multiplicity = 9;
+
+	for (i = 0; i < sim.num_IDlogs; i++)
+		IDprelog[i] = new vector<long> [IDlog_multiplicity * MAX_PCL_SPECIES];
 
 	for (i = 0; i < 6; i++)
 		domain[i] /= (double) sim.numpts;
@@ -1571,12 +1589,20 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 				sprintf(filename, "_%04d", cycle);
 
 			if (sim.tracer_factor[0] > 0)
-				pcls_cdm->saveGadget2(h5filename + filename + "_cdm", hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][0], IDprelog[sim.IDlog_mapping[i]][0], phi, sim.tracer_factor[0]);
+			{
+				if (IDlog_multiplicity > 1)
+					pcls_cdm->saveGadget2<1>(h5filename + filename + "_cdm", hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][0], &IDprelog[sim.IDlog_mapping[i]][0], phi, sim.tracer_factor[0]);
+				else
+					pcls_cdm->saveGadget2(h5filename + filename + "_cdm", hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][0], &IDprelog[sim.IDlog_mapping[i]][0], phi, sim.tracer_factor[0]);
+			}
 
 			if (sim.baryon_flag && sim.tracer_factor[1] > 0)
 			{
 				hdr.mass[1] = (double) sim.tracer_factor[1] * C_RHO_CRIT * cosmo.Omega_b * sim.boxsize * sim.boxsize * sim.boxsize / sim.numpcl[1] / GADGET_MASS_CONVERSION;
-				pcls_b->saveGadget2(h5filename + filename + "_b", hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][1], IDprelog[sim.IDlog_mapping[i]][1], phi, sim.tracer_factor[1]);
+				if (IDlog_multiplicity > 1)
+					pcls_b->saveGadget2<1>(h5filename + filename + "_b", hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][1], &IDprelog[sim.IDlog_mapping[i]][IDlog_multiplicity], phi, sim.tracer_factor[1]);
+				else
+					pcls_b->saveGadget2(h5filename + filename + "_b", hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][1], &IDprelog[sim.IDlog_mapping[i]][1], phi, sim.tracer_factor[1]);
 			}
 			
 			for (p = 0; p < cosmo.num_ncdm; p++)
@@ -1584,7 +1610,10 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 				if (sim.numpcl[1+sim.baryon_flag+p] == 0 || sim.tracer_factor[p+1+sim.baryon_flag] == 0) continue;
 				sprintf(buffer, "_ncdm%d", p);
 				hdr.mass[1] = (double) sim.tracer_factor[p+1+sim.baryon_flag] * C_RHO_CRIT * cosmo.Omega_ncdm[p] * sim.boxsize * sim.boxsize * sim.boxsize / sim.numpcl[p+1+sim.baryon_flag] / GADGET_MASS_CONVERSION;
-				pcls_ncdm[p].saveGadget2(h5filename + filename + buffer, hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][p+1+sim.baryon_flag], IDprelog[sim.IDlog_mapping[i]][p+1+sim.baryon_flag], phi, sim.tracer_factor[p+1+sim.baryon_flag]);
+				if (IDlog_multiplicity > 1)
+					pcls_ncdm[p].saveGadget2<1>(h5filename + filename + buffer, hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][p+1+sim.baryon_flag], &IDprelog[sim.IDlog_mapping[i]][IDlog_multiplicity*(p+1+sim.baryon_flag)], phi, sim.tracer_factor[p+1+sim.baryon_flag]);
+				else
+					pcls_ncdm[p].saveGadget2(h5filename + filename + buffer, hdr, sim.lightcone[i], d - tau, dtau, dtau_old, a * Hconf(a, fourpiG, cosmo), vertex, n, IDbacklog[sim.IDlog_mapping[i]][p+1+sim.baryon_flag], &IDprelog[sim.IDlog_mapping[i]][p+1+sim.baryon_flag], phi, sim.tracer_factor[p+1+sim.baryon_flag]);
 			}
 		}
 	}
@@ -1597,134 +1626,688 @@ void writeLightcones(metadata & sim, cosmology & cosmo, const double fourpiG, co
 	{
 		for (p = 0; p <= cosmo.num_ncdm + sim.baryon_flag; p++)
 		{
-			IDbacklog[l][p] = IDprelog[l][p];
-			IDprelog[l][p].clear();
+			IDbacklog[l][p].clear();
 
-			n = IDbacklog[l][p].size();
-			// dim 0 send/rec
-			if (parallel.grid_rank()[0] % 2 == 0)
+			if (IDlog_multiplicity > 1)
 			{
-				parallel.send_dim0<int>(n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-				parallel.receive_dim0<int>(i, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-				parallel.send_dim0<int>(n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
-				parallel.receive_dim0<int>(j, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				for (int q = 0; q < IDlog_multiplicity; q++)
+					IDlog_sizes[q] = IDprelog[l][p*IDlog_multiplicity+q].size();
 			}
 			else
 			{
-				parallel.receive_dim0<int>(i, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
-				parallel.send_dim0<int>(n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
-				parallel.receive_dim0<int>(j, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-				parallel.send_dim0<int>(n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+				n = IDprelog[l][p].size();
+				i = 0;
+				j = 0;
 			}
 
-			if (n+i+j > 0)
+			// first, even ranks send upwards, odd ranks receive
+			if (parallel.grid_rank()[1] % 2 == 0)
 			{
-				IDcombuf = (long *) malloc((n+i+j) * sizeof(long));
-
-				n = 0;
-				for (std::set<long>::iterator it = IDbacklog[l][p].begin(); it != IDbacklog[l][p].end(); it++)
-					IDcombuf[n++] = *it;
-
-				if (parallel.grid_rank()[0] % 2 == 0)
+				if (IDlog_multiplicity > 1)
 				{
-					if (n > 0)
-						parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-					if (i > 0)
-						parallel.receive_dim0<long>(IDcombuf+n, i, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-					if (n > 0)
-						parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
-					if (j > 0)
-						parallel.receive_dim0<long>(IDcombuf+n+i, j, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+					IDlog_sizes_send1[0] = IDlog_sizes[2];
+					IDlog_sizes_send1[1] = IDlog_sizes[5];
+					IDlog_sizes_send1[2] = IDlog_sizes[8];
+
+					parallel.send_dim1<int>(IDlog_sizes_send1, 3, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes[2] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity+2].data(), IDlog_sizes[2], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes[5] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity+5].data(), IDlog_sizes[5], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes[8] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity+8].data(), IDlog_sizes[8], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
 				}
 				else
 				{
-					if (i > 0)
-						parallel.receive_dim0<long>(IDcombuf+n, i, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+					parallel.send_dim1<int>(n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
 					if (n > 0)
-						parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
-					if (j > 0)
-						parallel.receive_dim0<long>(IDcombuf+n+i, j, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
-					if (n > 0)
-						parallel.send_dim0<long>(IDcombuf, n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+						parallel.send_dim1<long>(IDprelog[l][p].data(), n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
 				}
-
-				n += i + j;
-
-				for (i = IDbacklog[l][p].size(); i < n; i++)
-					IDbacklog[l][p].insert(IDcombuf[i]);
 			}
 
-			// dim 1 send/rec
-			if (parallel.grid_rank()[1] % 2 == 0)
+			if (parallel.grid_rank()[1] % 2 == 1 || (parallel.grid_rank()[1] == 0 && parallel.grid_size()[1] % 2 == 1)) // odd rank or rank 0 with odd grid size
 			{
-				parallel.send_dim1<int>(n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-				parallel.receive_dim1<int>(i, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-				parallel.send_dim1<int>(n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-				parallel.receive_dim1<int>(j, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-
-				if (n > 0)
-					parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-
-				if (i > 0)
+				if (IDlog_multiplicity > 1)
 				{
-					IDcombuf2 = (long *) malloc(i * sizeof(long));
-					parallel.receive_dim1<long>(IDcombuf2, i, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-					while (i > 0)
-						IDbacklog[l][p].insert(IDcombuf2[--i]);
-					free(IDcombuf2);
+					parallel.receive_dim1<int>(IDlog_sizes_recv1, 3, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes_recv1[0] + IDlog_sizes_recv1[1] + IDlog_sizes_recv1[2] > 0)
+					{
+						IDcombuf1 = (long *) malloc((IDlog_sizes_recv1[0] + IDlog_sizes_recv1[1] + IDlog_sizes_recv1[2]) * sizeof(long));
+
+						if (IDlog_sizes_recv1[0] > 0)
+							parallel.receive_dim1<long>(IDcombuf1, IDlog_sizes_recv1[0], (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+						if (IDlog_sizes_recv1[1] > 0)
+							parallel.receive_dim1<long>(IDcombuf1+IDlog_sizes_recv1[0], IDlog_sizes_recv1[1], (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+						if (IDlog_sizes_recv1[2] > 0)
+							parallel.receive_dim1<long>(IDcombuf1+IDlog_sizes_recv1[0]+IDlog_sizes_recv1[1], IDlog_sizes_recv1[2], (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+					}
 				}
-
-				if (n > 0)
+				else
 				{
-					parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-					free(IDcombuf);
+					parallel.receive_dim1<int>(j, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+					if (j > 0)
+					{
+						IDcombuf1 = (long *) malloc(j * sizeof(long));
+
+						parallel.receive_dim1<long>(IDcombuf1, j, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+					}
 				}
+			}
 
-				if (j > 0)
+			// second, odd ranks send downwards, even ranks receive
+			if (parallel.grid_rank()[1] % 2 == 1)
+			{
+				if (IDlog_multiplicity > 1)
 				{
-					IDcombuf2 = (long *) malloc(j * sizeof(long));
-					parallel.receive_dim1<long>(IDcombuf2, j, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-					while (j > 0)
-						IDbacklog[l][p].insert(IDcombuf2[--j]);
-					free(IDcombuf2);
+					IDlog_sizes_send1[0] = IDlog_sizes[0];
+					IDlog_sizes_send1[1] = IDlog_sizes[3];
+					IDlog_sizes_send1[2] = IDlog_sizes[6];
+
+					parallel.send_dim1<int>(IDlog_sizes_send1, 3, parallel.grid_rank()[1]-1);
+
+					if (IDlog_sizes[0] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity].data(), IDlog_sizes[0], parallel.grid_rank()[1]-1);
+
+					if (IDlog_sizes[3] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity+3].data(), IDlog_sizes[3], parallel.grid_rank()[1]-1);
+
+					if (IDlog_sizes[6] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity+6].data(), IDlog_sizes[6], parallel.grid_rank()[1]-1);
+				}
+				else
+				{
+					parallel.send_dim1<int>(n, parallel.grid_rank()[1]-1);
+
+					if (n > 0)
+						parallel.send_dim1<long>(IDprelog[l][p].data(), n, parallel.grid_rank()[1]-1);
 				}
 			}
 			else
 			{
-				parallel.receive_dim1<int>(i, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-				parallel.send_dim1<int>(n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-				parallel.receive_dim1<int>(j, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-				parallel.send_dim1<int>(n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-
-				if (i > 0)
+				if (IDlog_multiplicity > 1)
 				{
-					IDcombuf2 = (long *) malloc(i * sizeof(long));
-					parallel.receive_dim1<long>(IDcombuf2, i, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-					while (i > 0)
-						IDbacklog[l][p].insert(IDcombuf2[--i]);
-					free(IDcombuf2);
+					parallel.receive_dim1<int>(IDlog_sizes_recv1+3, 3, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes_recv1[3] + IDlog_sizes_recv1[4] + IDlog_sizes_recv1[5] > 0)
+					{
+						IDcombuf2 = (long *) malloc((IDlog_sizes_recv1[3] + IDlog_sizes_recv1[4] + IDlog_sizes_recv1[5]) * sizeof(long));
+
+						if (IDlog_sizes_recv1[3] > 0)
+							parallel.receive_dim1<long>(IDcombuf2, IDlog_sizes_recv1[3], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+						if (IDlog_sizes_recv1[4] > 0)
+							parallel.receive_dim1<long>(IDcombuf2+IDlog_sizes_recv1[3], IDlog_sizes_recv1[4], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+						if (IDlog_sizes_recv1[5] > 0)
+							parallel.receive_dim1<long>(IDcombuf2+IDlog_sizes_recv1[3]+IDlog_sizes_recv1[4], IDlog_sizes_recv1[5], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+					}
 				}
-
-				if (n > 0)
-					parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
-
-				if (j > 0)
+				else
 				{
-					IDcombuf2 = (long *) malloc(j * sizeof(long));
-					parallel.receive_dim1<long>(IDcombuf2, j, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-					while (j > 0)
-						IDbacklog[l][p].insert(IDcombuf2[--j]);
-					free(IDcombuf2);
-				}
+					parallel.receive_dim1<int>(i, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
 
-				if (n > 0)
-				{
-					parallel.send_dim1<long>(IDcombuf, n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
-					free(IDcombuf);
+					if (i > 0)
+					{
+						IDcombuf2 = (long *) malloc(i * sizeof(long));
+
+						parallel.receive_dim1<long>(IDcombuf2, i, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+					}
 				}
+			}
+
+			// third, even ranks send downwards, odd ranks receive
+			if (parallel.grid_rank()[1] % 2 == 0)
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					IDlog_sizes_send1[0] = IDlog_sizes[0];
+					IDlog_sizes_send1[1] = IDlog_sizes[3];
+					IDlog_sizes_send1[2] = IDlog_sizes[6];
+
+					parallel.send_dim1<int>(IDlog_sizes_send1, 3, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes[0] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity].data(), IDlog_sizes[0], (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes[3] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity+3].data(), IDlog_sizes[3], (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes[6] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity+6].data(), IDlog_sizes[6], (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+				}
+				else
+				{
+					parallel.send_dim1<int>(n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+					if (n > 0)
+						parallel.send_dim1<long>(IDprelog[l][p].data(), n, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+				}
+			}
+			else
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					parallel.receive_dim1<int>(IDlog_sizes_recv1+3, 3, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes_recv1[3] + IDlog_sizes_recv1[4] + IDlog_sizes_recv1[5] > 0)
+					{
+						IDcombuf2 = (long *) malloc((IDlog_sizes_recv1[3] + IDlog_sizes_recv1[4] + IDlog_sizes_recv1[5]) * sizeof(long));
+
+						if (IDlog_sizes_recv1[3] > 0)
+							parallel.receive_dim1<long>(IDcombuf2, IDlog_sizes_recv1[3], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+						if (IDlog_sizes_recv1[4] > 0)
+							parallel.receive_dim1<long>(IDcombuf2+IDlog_sizes_recv1[3], IDlog_sizes_recv1[4], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+						if (IDlog_sizes_recv1[5] > 0)
+							parallel.receive_dim1<long>(IDcombuf2+IDlog_sizes_recv1[3]+IDlog_sizes_recv1[4], IDlog_sizes_recv1[5], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+					}
+				}
+				else
+				{
+					parallel.receive_dim1<int>(i, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+					if (i > 0)
+					{
+						IDcombuf2 = (long *) malloc(i * sizeof(long));
+
+						parallel.receive_dim1<long>(IDcombuf2, i, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+					}
+				}
+			}
+
+			// fourth, odd ranks send upwards, even ranks receive
+			if (parallel.grid_rank()[1] % 2 == 1)
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					IDlog_sizes_send1[0] = IDlog_sizes[2];
+					IDlog_sizes_send1[1] = IDlog_sizes[5];
+					IDlog_sizes_send1[2] = IDlog_sizes[8];
+
+					parallel.send_dim1<int>(IDlog_sizes_send1, 3, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes[2] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity+2].data(), IDlog_sizes[2], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes[5] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity+5].data(), IDlog_sizes[5], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes[8] > 0)
+						parallel.send_dim1<long>(IDprelog[l][p*IDlog_multiplicity+8].data(), IDlog_sizes[8], (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+				}
+				else
+				{
+					parallel.send_dim1<int>(n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+
+					if (n > 0)
+						parallel.send_dim1<long>(IDprelog[l][p].data(), n, (parallel.grid_rank()[1]+1) % parallel.grid_size()[1]);
+				}
+			}
+			else if (parallel.grid_rank()[1] > 0 || parallel.grid_size()[1] % 2 == 0)
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					parallel.receive_dim1<int>(IDlog_sizes_recv1, 3, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+					if (IDlog_sizes_recv1[0] + IDlog_sizes_recv1[1] + IDlog_sizes_recv1[2] > 0)
+					{
+						IDcombuf1 = (long *) malloc((IDlog_sizes_recv1[0] + IDlog_sizes_recv1[1] + IDlog_sizes_recv1[2]) * sizeof(long));
+
+						if (IDlog_sizes_recv1[0] > 0)
+							parallel.receive_dim1<long>(IDcombuf1, IDlog_sizes_recv1[0], (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+						if (IDlog_sizes_recv1[1] > 0)
+							parallel.receive_dim1<long>(IDcombuf1+IDlog_sizes_recv1[0], IDlog_sizes_recv1[1], (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+						if (IDlog_sizes_recv1[2] > 0)
+							parallel.receive_dim1<long>(IDcombuf1+IDlog_sizes_recv1[0]+IDlog_sizes_recv1[1], IDlog_sizes_recv1[2], (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+					}
+				}
+				else
+				{
+					parallel.receive_dim1<int>(j, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+
+					if (j > 0)
+					{
+						IDcombuf1 = (long *) malloc(j * sizeof(long));
+
+						parallel.receive_dim1<long>(IDcombuf1, j, (parallel.grid_size()[1]+parallel.grid_rank()[1]-1) % parallel.grid_size()[1]);
+					}
+				}
+			}
+
+			// remaining dimension has to communicate
+
+			//first, even ranks send upwards, odd ranks receive
+			if (parallel.grid_rank()[0] % 2 == 0)
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					IDlog_sizes_send0[0] = IDlog_sizes[6];
+					IDlog_sizes_send0[1] = IDlog_sizes[7];
+					IDlog_sizes_send0[2] = IDlog_sizes[8];
+					IDlog_sizes_send0[3] = IDlog_sizes_recv1[2];
+					IDlog_sizes_send0[4] = IDlog_sizes_recv1[5];
+
+					parallel.send_dim0<int>(IDlog_sizes_send0, 5, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					for (int q = 6; q < 9; q++)
+					{
+						if (IDlog_sizes[q] > 0)
+							parallel.send_dim0<long>(IDprelog[l][p*IDlog_multiplicity+q].data(), IDlog_sizes[q], (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+					}
+
+					if (IDlog_sizes_recv1[2] > 0)
+						parallel.send_dim0<long>(IDcombuf1+IDlog_sizes_recv1[0]+IDlog_sizes_recv1[1], IDlog_sizes_recv1[2], (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv1[5] > 0)
+						parallel.send_dim0<long>(IDcombuf2+IDlog_sizes_recv1[3]+IDlog_sizes_recv1[4], IDlog_sizes_recv1[5], (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				}
+				else
+				{
+					IDlog_sizes_send0[0] = n;
+					IDlog_sizes_send0[1] = j;
+					IDlog_sizes_send0[2] = i;
+
+					parallel.send_dim0<int>(IDlog_sizes_send0, 3, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (n > 0)
+						parallel.send_dim0<long>(IDprelog[l][p].data(), n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (j > 0)
+						parallel.send_dim0<long>(IDcombuf1, j, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (i > 0)
+						parallel.send_dim0<long>(IDcombuf2, i, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				}
+			}
+			
+			if (parallel.grid_rank()[0] % 2 == 1 || (parallel.grid_rank()[0] == 0 && parallel.grid_size()[0] % 2 == 1)) // odd rank or rank 0 with odd grid size
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					parallel.receive_dim0<int>(IDlog_sizes_recv0, 5, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv0[0] + IDlog_sizes_recv0[1] + IDlog_sizes_recv0[2] + IDlog_sizes_recv0[3] + IDlog_sizes_recv0[4] > 0)
+					{
+						IDcombuf3 = (long *) malloc((IDlog_sizes_recv0[0] + IDlog_sizes_recv0[1] + IDlog_sizes_recv0[2] + IDlog_sizes_recv0[3] + IDlog_sizes_recv0[4]) * sizeof(long));
+
+						long * IDcombuf = IDcombuf3;
+
+						for (int q = 0; q < 5; q++)
+						{
+							if (IDlog_sizes_recv0[q] > 0)
+							{
+								parallel.receive_dim0<long>(IDcombuf, IDlog_sizes_recv0[q], (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+								IDcombuf += IDlog_sizes_recv0[q];
+							}
+						}
+					}
+				}
+				else
+				{
+					parallel.receive_dim0<int>(IDlog_sizes_recv0, 3, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv0[0] + IDlog_sizes_recv0[1] + IDlog_sizes_recv0[2] > 0)
+					{
+						IDcombuf3 = (long *) malloc((IDlog_sizes_recv0[0] + IDlog_sizes_recv0[1] + IDlog_sizes_recv0[2]) * sizeof(long));
+
+						long * IDcombuf = IDcombuf3;
+
+						for (int q = 0; q < 3; q++)
+						{
+							if (IDlog_sizes_recv0[q] > 0)
+							{
+								parallel.receive_dim0<long>(IDcombuf, IDlog_sizes_recv0[q], (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+								IDcombuf += IDlog_sizes_recv0[q];
+							}
+						}
+					}
+				}
+			}
+
+			// second, odd ranks send downwards, even ranks receive
+			if (parallel.grid_rank()[0] % 2 == 1)
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					IDlog_sizes_send0[0] = IDlog_sizes[0];
+					IDlog_sizes_send0[1] = IDlog_sizes[1];
+					IDlog_sizes_send0[2] = IDlog_sizes[2];
+					IDlog_sizes_send0[3] = IDlog_sizes_recv1[0];
+					IDlog_sizes_send0[4] = IDlog_sizes_recv1[3];
+
+					parallel.send_dim0<int>(IDlog_sizes_send0, 5, parallel.grid_rank()[0]-1);
+
+					for(int q = 0; q < 3; q++)
+					{
+						if (IDlog_sizes[q] > 0)
+							parallel.send_dim0<long>(IDprelog[l][p*IDlog_multiplicity+q].data(), IDlog_sizes[q], parallel.grid_rank()[0]-1);
+					}
+
+					if (IDlog_sizes_recv1[0] > 0)
+						parallel.send_dim0<long>(IDcombuf1, IDlog_sizes_recv1[0], parallel.grid_rank()[0]-1);
+
+					if (IDlog_sizes_recv1[3] > 0)
+						parallel.send_dim0<long>(IDcombuf2, IDlog_sizes_recv1[3], parallel.grid_rank()[0]-1);
+				}
+				else
+				{
+					IDlog_sizes_send0[0] = n;
+					IDlog_sizes_send0[1] = j;
+					IDlog_sizes_send0[2] = i;
+
+					parallel.send_dim0<int>(IDlog_sizes_send0, 3, parallel.grid_rank()[0]-1);
+
+					if (n > 0)
+						parallel.send_dim0<long>(IDprelog[l][p].data(), n, parallel.grid_rank()[0]-1);
+
+					if (j > 0)
+						parallel.send_dim0<long>(IDcombuf1, j, parallel.grid_rank()[0]-1);
+
+					if (i > 0)
+						parallel.send_dim0<long>(IDcombuf2, i, parallel.grid_rank()[0]-1);
+				}
+			}
+			else
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					parallel.receive_dim0<int>(IDlog_sizes_recv0+5, 5, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv0[5] + IDlog_sizes_recv0[6] + IDlog_sizes_recv0[7] + IDlog_sizes_recv0[8] + IDlog_sizes_recv0[9] > 0)
+					{
+						IDcombuf4 = (long *) malloc((IDlog_sizes_recv0[5] + IDlog_sizes_recv0[6] + IDlog_sizes_recv0[7] + IDlog_sizes_recv0[8] + IDlog_sizes_recv0[9]) * sizeof(long));
+
+						long * IDcombuf = IDcombuf4;
+
+						for (int q = 5; q < 10; q++)
+						{
+							if (IDlog_sizes_recv0[q] > 0)
+							{
+								parallel.receive_dim0<long>(IDcombuf, IDlog_sizes_recv0[q], (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+								IDcombuf += IDlog_sizes_recv0[q];
+							}
+						}
+					}
+				}
+				else
+				{
+					parallel.receive_dim0<int>(IDlog_sizes_recv0+3, 3, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv0[3] + IDlog_sizes_recv0[4] + IDlog_sizes_recv0[5] > 0)
+					{
+						IDcombuf4 = (long *) malloc((IDlog_sizes_recv0[3] + IDlog_sizes_recv0[4] + IDlog_sizes_recv0[5]) * sizeof(long));
+
+						long * IDcombuf = IDcombuf4;
+
+						for (int q = 3; q < 6; q++)
+						{
+							if (IDlog_sizes_recv0[q] > 0)
+							{
+								parallel.receive_dim0<long>(IDcombuf, IDlog_sizes_recv0[q], (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+								IDcombuf += IDlog_sizes_recv0[q];
+							}
+						}
+					}
+				}
+			}
+
+			// third, even ranks send downwards, odd ranks receive
+			if (parallel.grid_rank()[0] % 2 == 0)
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					IDlog_sizes_send0[0] = IDlog_sizes[0];
+					IDlog_sizes_send0[1] = IDlog_sizes[1];
+					IDlog_sizes_send0[2] = IDlog_sizes[2];
+					IDlog_sizes_send0[3] = IDlog_sizes_recv1[0];
+					IDlog_sizes_send0[4] = IDlog_sizes_recv1[3];
+
+					parallel.send_dim0<int>(IDlog_sizes_send0, 5, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+
+					for (int q = 0; q < 3; q++)
+					{
+						if (IDlog_sizes[q] > 0)
+							parallel.send_dim0<long>(IDprelog[l][p*IDlog_multiplicity+q].data(), IDlog_sizes[q], (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+					}
+
+					if (IDlog_sizes_recv1[0] > 0)
+						parallel.send_dim0<long>(IDcombuf1, IDlog_sizes_recv1[0], (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv1[3] > 0)
+						parallel.send_dim0<long>(IDcombuf2, IDlog_sizes_recv1[3], (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+				}
+				else
+				{
+					IDlog_sizes_send0[0] = n;
+					IDlog_sizes_send0[1] = j;
+					IDlog_sizes_send0[2] = i;
+
+					parallel.send_dim0<int>(IDlog_sizes_send0, 3, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+
+					if (n > 0)
+						parallel.send_dim0<long>(IDprelog[l][p].data(), n, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+
+					if (j > 0)
+						parallel.send_dim0<long>(IDcombuf1, j, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+
+					if (i > 0)
+						parallel.send_dim0<long>(IDcombuf2, i, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+				}
+			}
+			else
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					parallel.receive_dim0<int>(IDlog_sizes_recv0+5, 5, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv0[5] + IDlog_sizes_recv0[6] + IDlog_sizes_recv0[7] + IDlog_sizes_recv0[8] + IDlog_sizes_recv0[9] > 0)
+					{
+						IDcombuf4 = (long *) malloc((IDlog_sizes_recv0[5] + IDlog_sizes_recv0[6] + IDlog_sizes_recv0[7] + IDlog_sizes_recv0[8] + IDlog_sizes_recv0[9]) * sizeof(long));
+
+						long * IDcombuf = IDcombuf4;
+
+						for (int q = 5; q < 10; q++)
+						{
+							if (IDlog_sizes_recv0[q] > 0)
+							{
+								parallel.receive_dim0<long>(IDcombuf, IDlog_sizes_recv0[q], (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+								IDcombuf += IDlog_sizes_recv0[q];
+							}
+						}
+					}
+				}
+				else
+				{
+					parallel.receive_dim0<int>(IDlog_sizes_recv0+3, 3, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv0[3] + IDlog_sizes_recv0[4] + IDlog_sizes_recv0[5] > 0)
+					{
+						IDcombuf4 = (long *) malloc((IDlog_sizes_recv0[3] + IDlog_sizes_recv0[4] + IDlog_sizes_recv0[5]) * sizeof(long));
+
+						long * IDcombuf = IDcombuf4;
+
+						for (int q = 3; q < 6; q++)
+						{
+							if (IDlog_sizes_recv0[q] > 0)
+							{
+								parallel.receive_dim0<long>(IDcombuf, IDlog_sizes_recv0[q], (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+								IDcombuf += IDlog_sizes_recv0[q];
+							}
+						}
+					}
+				}
+			}
+
+			// fourth, odd ranks send upwards, even ranks receive
+			if (parallel.grid_rank()[0] % 2 == 1)
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					IDlog_sizes_send0[0] = IDlog_sizes[6];
+					IDlog_sizes_send0[1] = IDlog_sizes[7];
+					IDlog_sizes_send0[2] = IDlog_sizes[8];
+					IDlog_sizes_send0[3] = IDlog_sizes_recv1[2];
+					IDlog_sizes_send0[4] = IDlog_sizes_recv1[5];
+
+					parallel.send_dim0<int>(IDlog_sizes_send0, 5, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					for (int q = 6; q < 9; q++)
+					{
+						if (IDlog_sizes[q] > 0)
+							parallel.send_dim0<long>(IDprelog[l][p*IDlog_multiplicity+q].data(), IDlog_sizes[q], (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+					}
+
+					if (IDlog_sizes_recv1[2] > 0)
+						parallel.send_dim0<long>(IDcombuf1+IDlog_sizes_recv1[0]+IDlog_sizes_recv1[1], IDlog_sizes_recv1[2], (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv1[5] > 0)
+						parallel.send_dim0<long>(IDcombuf2+IDlog_sizes_recv1[3]+IDlog_sizes_recv1[4], IDlog_sizes_recv1[5], (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				}
+				else
+				{
+					IDlog_sizes_send0[0] = n;
+					IDlog_sizes_send0[1] = j;
+					IDlog_sizes_send0[2] = i;
+
+					parallel.send_dim0<int>(IDlog_sizes_send0, 3, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (n > 0)
+						parallel.send_dim0<long>(IDprelog[l][p].data(), n, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (j > 0)
+						parallel.send_dim0<long>(IDcombuf1, j, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+
+					if (i > 0)
+						parallel.send_dim0<long>(IDcombuf2, i, (parallel.grid_rank()[0]+1) % parallel.grid_size()[0]);
+				}
+			}
+			else if (parallel.grid_rank()[0] > 0 || parallel.grid_size()[0] % 2 == 0)
+			{
+				if (IDlog_multiplicity > 1)
+				{
+					parallel.receive_dim0<int>(IDlog_sizes_recv0, 5, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv0[0] + IDlog_sizes_recv0[1] + IDlog_sizes_recv0[2] + IDlog_sizes_recv0[3] + IDlog_sizes_recv0[4] > 0)
+					{
+						IDcombuf3 = (long *) malloc((IDlog_sizes_recv0[0] + IDlog_sizes_recv0[1] + IDlog_sizes_recv0[2] + IDlog_sizes_recv0[3] + IDlog_sizes_recv0[4]) * sizeof(long));
+
+						long * IDcombuf = IDcombuf3;
+
+						for (int q = 0; q < 5; q++)
+						{
+							if (IDlog_sizes_recv0[q] > 0)
+							{
+								parallel.receive_dim0<long>(IDcombuf, IDlog_sizes_recv0[q], (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+								IDcombuf += IDlog_sizes_recv0[q];
+							}
+						}
+					}
+				}
+				else
+				{
+					parallel.receive_dim0<int>(IDlog_sizes_recv0, 3, (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+
+					if (IDlog_sizes_recv0[0] + IDlog_sizes_recv0[1] + IDlog_sizes_recv0[2] > 0)
+					{
+						IDcombuf3 = (long *) malloc((IDlog_sizes_recv0[0] + IDlog_sizes_recv0[1] + IDlog_sizes_recv0[2]) * sizeof(long));
+
+						long * IDcombuf = IDcombuf3;
+
+						for (int q = 0; q < 3; q++)
+						{
+							if (IDlog_sizes_recv0[q] > 0)
+							{
+								parallel.receive_dim0<long>(IDcombuf, IDlog_sizes_recv0[q], (parallel.grid_size()[0]+parallel.grid_rank()[0]-1) % parallel.grid_size()[0]);
+								IDcombuf += IDlog_sizes_recv0[q];
+							}
+						}
+					}
+				}
+			}
+
+			// communication complete, now merge data
+		
+			// compute length of IDcombuf1
+			if (IDlog_multiplicity > 1)
+				j = IDlog_sizes_recv1[0] + IDlog_sizes_recv1[1] + IDlog_sizes_recv1[2];
+
+			for (int q = 0; q < j; q++)
+				IDbacklog[l][p].insert(IDcombuf1[q]);
+
+			free(IDcombuf1);
+
+			// compute length of IDcombuf2
+			if (IDlog_multiplicity > 1)
+				i = IDlog_sizes_recv1[3] + IDlog_sizes_recv1[4] + IDlog_sizes_recv1[5];
+
+			for (int q = 0; q < i; q++)
+				IDbacklog[l][p].insert(IDcombuf2[q]);
+
+			free(IDcombuf2);
+
+			// compute length of IDcombuf3
+			j = IDlog_sizes_recv0[0] + IDlog_sizes_recv0[1] + IDlog_sizes_recv0[2];
+
+			if (IDlog_multiplicity > 1)
+				j += IDlog_sizes_recv0[3] + IDlog_sizes_recv0[4];
+
+			for (int q = 0; q < j; q++)
+				IDbacklog[l][p].insert(IDcombuf3[q]);
+
+			free(IDcombuf3);
+
+			// compute length of IDcombuf4
+			if (IDlog_multiplicity > 1)
+				i = IDlog_sizes_recv0[5] + IDlog_sizes_recv0[6] + IDlog_sizes_recv0[7] + IDlog_sizes_recv0[8] + IDlog_sizes_recv0[9];
+			else
+				i = IDlog_sizes_recv0[3] + IDlog_sizes_recv0[4] + IDlog_sizes_recv0[5];
+
+			for (int q = 0; q < i; q++)
+				IDbacklog[l][p].insert(IDcombuf4[q]);
+
+			free(IDcombuf4);
+
+			// ingest local IDs
+
+			if (IDlog_multiplicity > 1)
+			{
+				for (int q = 0; q < 9; q++)
+				{
+					if (IDlog_sizes[q] > 0)
+					{
+						for (int r = 0; r < IDlog_sizes[q]; r++)
+							IDbacklog[l][p].insert(IDprelog[l][p*IDlog_multiplicity+q][r]);
+
+						IDprelog[l][p*IDlog_multiplicity+q].clear();
+					}
+				}
+			}
+			else
+			{
+				for (int q = 0; q < n; q++)
+					IDbacklog[l][p].insert(IDprelog[l][p][q]);
+
+				IDprelog[l][p].clear();
 			}
 		}
 	}
+
+	// delete IDprelog
+	for (i = 0; i < sim.num_IDlogs; i++)
+		delete[] IDprelog[i];
+
+	delete[] IDprelog;
 }
 
 

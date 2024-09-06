@@ -22,7 +22,8 @@ class Particles_gevolution: public Particles<part, part_info, part_dataType>
 {
 	public:
 		void saveGadget2(string filename, gadget2_header & hdr, const int tracer_factor = 1, double dtau_pos = 0., double dtau_vel = 0., Field<Real> * phi = NULL);
-		void saveGadget2(string filename, gadget2_header & hdr, lightcone_geometry & lightcone, double dist, double dtau, double dtau_old, double dadtau, double vertex[MAX_INTERSECTS][3], const int vertexcount, set<long> & IDbacklog, set<long> & IDprelog, Field<Real> * phi, const int tracer_factor = 1);
+		template <int IDlog_scatter = 0>
+		void saveGadget2(string filename, gadget2_header & hdr, lightcone_geometry & lightcone, double dist, double dtau, double dtau_old, double dadtau, double vertex[MAX_INTERSECTS][3], const int vertexcount, set<long> & IDbacklog, vector<long> * IDprelog, Field<Real> * phi, const int tracer_factor = 1);
 		void loadGadget2(string filename, gadget2_header & hdr);
 };
 
@@ -241,7 +242,8 @@ void Particles_gevolution<part,part_info,part_dataType>::saveGadget2(string file
 
 
 template <typename part, typename part_info, typename part_dataType>
-void Particles_gevolution<part,part_info,part_dataType>::saveGadget2(string filename, gadget2_header & hdr, lightcone_geometry & lightcone, double dist, double dtau, double dtau_old, double dadtau, double vertex[MAX_INTERSECTS][3], const int vertexcount, set<long> & IDbacklog, set<long> & IDprelog, Field<Real> * phi, const int tracer_factor)
+template <int IDlog_scatter>
+void Particles_gevolution<part,part_info,part_dataType>::saveGadget2(string filename, gadget2_header & hdr, lightcone_geometry & lightcone, double dist, double dtau, double dtau_old, double dadtau, double vertex[MAX_INTERSECTS][3], const int vertexcount, set<long> & IDbacklog, vector<long> * IDprelog, Field<Real> * phi, const int tracer_factor)
 {
 	float * posdata;
 	float * veldata;
@@ -261,6 +263,16 @@ void Particles_gevolution<part,part_info,part_dataType>::saveGadget2(string file
 	
 	LATfield2::Site xPart(this->lat_part_);
 	LATfield2::Site xField(phi->lattice());
+
+	double domain[4];
+
+	domain[0] = this->lat_part_.coordSkip()[1];
+	domain[1] = domain[0] + this->lat_part_.sizeLocal(1);
+	domain[2] = this->lat_part_.coordSkip()[0];
+	domain[3] = domain[2] + this->lat_part_.sizeLocal(2);
+
+	for (int j = 0; j < 4; j++)
+		domain[j] *= this->lat_resolution_;
 	
 	if (hdr.num_files != 1)
 	{
@@ -297,7 +309,40 @@ void Particles_gevolution<part,part_info,part_dataType>::saveGadget2(string file
 							if (outer - d > 2. * LIGHTCONE_IDCHECK_ZONE * dtau_old || IDbacklog.find((*it).ID) == IDbacklog.end())
 							{
 								if (d - inner < 2. * LIGHTCONE_IDCHECK_ZONE * dtau)
-									IDprelog.insert((*it).ID);
+								{
+									if (IDlog_scatter)
+									{
+										if ((*it).pos[1] - domain[0] < LIGHTCONE_IDCHECK_ZONE * dtau) // left edge
+										{
+											if ((*it).pos[2] - domain[2] < LIGHTCONE_IDCHECK_ZONE * dtau) // lower left corner
+												IDprelog[0].push_back((*it).ID);
+											else if (domain[3] - (*it).pos[2] < LIGHTCONE_IDCHECK_ZONE * dtau) // upper left corner
+												IDprelog[6].push_back((*it).ID);
+											else
+												IDprelog[3].push_back((*it).ID);
+										}
+										else if (domain[1] - (*it).pos[1] < LIGHTCONE_IDCHECK_ZONE * dtau) // right edge
+										{
+											if ((*it).pos[2] - domain[2] < LIGHTCONE_IDCHECK_ZONE * dtau) // lower right corner
+												IDprelog[2].push_back((*it).ID);
+											else if (domain[3] - (*it).pos[2] < LIGHTCONE_IDCHECK_ZONE * dtau) // upper right corner
+												IDprelog[8].push_back((*it).ID);
+											else
+												IDprelog[5].push_back((*it).ID);
+										}
+										else
+										{
+											if ((*it).pos[2] - domain[2] < LIGHTCONE_IDCHECK_ZONE * dtau) // lower edge
+												IDprelog[1].push_back((*it).ID);
+											else if (domain[3] - (*it).pos[2] < LIGHTCONE_IDCHECK_ZONE * dtau) // upper edge
+												IDprelog[7].push_back((*it).ID);
+											else
+												IDprelog[4].push_back((*it).ID);
+										}
+									}
+									else
+										(*IDprelog).push_back((*it).ID);
+								}
 
 								for (int j = 0; j < 3; j++)
 									ref_dist[j] = modf((*it).pos[j] / this->lat_resolution_, &v2);

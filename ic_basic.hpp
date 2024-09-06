@@ -22,7 +22,10 @@
 #define Cplx Imag
 #endif  
 
+// maximum number of characters per line in a Tk file
+#ifndef MAX_LINESIZE
 #define MAX_LINESIZE 2048
+#endif
 
 using namespace std;
 using namespace LATfield2;
