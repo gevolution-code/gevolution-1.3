@@ -6,7 +6,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2024
+// Last modified: November 2024
 //
 //////////////////////////
 
@@ -14,6 +14,38 @@
 #define BACKGROUND_HEADER
 
 #include <gsl/gsl_integration.h>
+
+
+//////////////////////////
+// LookbackTime
+//////////////////////////
+// Description:
+//   computes the lookback time at given redshift
+//
+// Arguments:
+//   z          redshift
+//   cosmo      structure containing the cosmological parameters
+//
+// Returns: lookback time
+//
+//////////////////////////
+
+double LookbackTime(const double z, cosmology cosmo)
+{
+	double result;
+	gsl_function f;
+	double err;
+	size_t n;
+	
+	f.function = [](double ln1plusz, void * params) -> double {
+		return 1.0 / sqrt(((cosmology *)params)->Omega_rad * exp(4*ln1plusz) + ((cosmology *)params)->Omega_m * exp(3*ln1plusz) + (1.0 - ((cosmology *)params)->Omega_Lambda - ((cosmology *)params)->Omega_m - ((cosmology *)params)->Omega_rad) * exp(2*ln1plusz) + ((cosmology *)params)->Omega_Lambda);
+	};
+	f.params = (void *) &cosmo;
+	
+	gsl_integration_qng(&f, 0.0l, log(1+z), 5.0e-7, 1.0e-7, &result, &err, &n);
+	
+	return result / cosmo.h;
+}
 
 
 double FermiDiracIntegrand(double q, void * w)

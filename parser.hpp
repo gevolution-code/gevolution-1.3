@@ -19,6 +19,9 @@
 #include <map>
 #include <tuple>
 #include "metadata.hpp"
+#include "background.hpp"
+#include <gsl/gsl_odeiv2.h>
+#include <gsl/gsl_errno.h>
 
 using namespace std;
 
@@ -784,6 +787,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 	ic.restart_tau = 0.;
 	ic.restart_dtau = 0.;
 	ic.restart_version = -1.;
+	ic.LTB_Omega_k = 0.;
 	
 	parseParameter(params, numparam, "seed", ic.seed);
 	
@@ -1205,6 +1209,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 	sim.boxsize = -1.;
 	sim.wallclocklimit = -1.;
 	sim.z_in = 0.;
+	sim.LTB_radius = -1.0;
 
 	if (parseParameter(params, numparam, "vector method", par_string))
 	{
@@ -1810,6 +1815,120 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 	
 	cosmo.Omega_m = cosmo.Omega_cdm + cosmo.Omega_b;
 	for (i = 0; i < cosmo.num_ncdm; i++) cosmo.Omega_m += cosmo.Omega_ncdm[i];
+
+	if (parseParameter(params, numparam, "Omega_k", ic.LTB_Omega_k))
+	{
+		if (parseParameter(params, numparam, "LTB radius", sim.LTB_radius))
+		{
+			if (sim.LTB_radius < 0.)
+			{
+				COUT << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": LTB radius must be positive!" << endl;
+			}
+			else if (sim.LTB_radius > 0.5*sim.boxsize)
+			{
+				COUT << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": LTB radius must be smaller than half the box size!" << endl;
+			}
+		}
+		else
+		{
+			sim.LTB_radius = (0.5 - 1.5/sim.numpts)*sim.boxsize;
+		}
+
+		cosmo.Omega_Lambda = 1. - cosmo.Omega_m - cosmo.Omega_rad - ic.LTB_Omega_k;
+
+		COUT << " Running a " << COLORTEXT_CYAN << "curved" << COLORTEXT_RESET << " universe simulation using the LTB model" << endl;
+
+		COUT << " curved-space cosmological parameters are: Omega_m0 = " << cosmo.Omega_m << ", Omega_rad0 = " << cosmo.Omega_rad << ", Omega_k0 = " << ic.LTB_Omega_k << ", h = " << cosmo.h << endl;
+
+		// compute proper time interval between z_in and z=0
+
+		double lookback_time = LookbackTime(sim.z_in, cosmo);
+
+		// compute the LTB cosmological parameters on the initial slice
+
+		double LTB_E2 = cosmo.Omega_m * pow(1. + sim.z_in, 3) + cosmo.Omega_rad * pow(1. + sim.z_in, 4) + cosmo.Omega_Lambda + ic.LTB_Omega_k * pow(1. + sim.z_in, 2);
+		double LTB_h = cosmo.h * sqrt(LTB_E2);
+		ic.LTB_Omega_k *= pow(1. + sim.z_in, 2) / LTB_E2;
+		double LTB_Omega_m = cosmo.Omega_m * pow(1. + sim.z_in, 3) / LTB_E2;
+		double LTB_Omega_rad = cosmo.Omega_rad * pow(1. + sim.z_in, 4) / LTB_E2;
+		double LTB_Omega_Lambda = cosmo.Omega_Lambda / LTB_E2;
+
+		// compute the flat counterparts
+
+		double d1 = -0.6 * ic.LTB_Omega_k * (1. + 11. * ic.LTB_Omega_k / 35.);
+		cosmo.h = LTB_h * (1. + d1/3. + d1*d1/21.);
+		cosmo.Omega_Lambda = LTB_Omega_Lambda * LTB_h * LTB_h / (cosmo.h * cosmo.h);
+		cosmo.Omega_m = LTB_Omega_m * LTB_h * LTB_h / (cosmo.h * cosmo.h) / (1. + d1);
+		cosmo.Omega_rad = LTB_Omega_rad * LTB_h * LTB_h / (cosmo.h * cosmo.h);
+		
+		// compute expansion factor in flat cosmology
+
+		gsl_odeiv2_system flat_sys;
+		flat_sys.function = [](double t, const double y[], double dydt[], void *cosmo) -> int
+		{
+			// da/dt = H a
+			dydt[0] = ((cosmology *) cosmo)->h * sqrt(((cosmology *) cosmo)->Omega_m / y[0] + ((cosmology *) cosmo)->Omega_rad / y[0] / y[0] + ((cosmology *) cosmo)->Omega_Lambda * y[0] * y[0]);
+			return GSL_SUCCESS;
+		};
+		flat_sys.jacobian = nullptr;
+		flat_sys.dimension = 1;
+		flat_sys.params = (void *) &cosmo;
+
+		gsl_odeiv2_driver *flat_driver = gsl_odeiv2_driver_alloc_y_new(&flat_sys, gsl_odeiv2_step_rkf45, 1e-6, 1e-6, 0.0);
+
+		double a_flat = 1.;
+		double t = 0.;
+
+		gsl_odeiv2_driver_apply(flat_driver, &t, lookback_time, &a_flat);
+
+		gsl_odeiv2_driver_free(flat_driver);
+
+		COUT << " initial redshift (curved space) = " << sim.z_in << ", initial redshift (flat space) = " << a_flat - 1. << endl;
+
+		double flat_E2 = cosmo.Omega_m / pow(a_flat, 3) + cosmo.Omega_rad / pow(a_flat, 4) + cosmo.Omega_Lambda;
+
+		sim.z_in = a_flat - 1.;
+		cosmo.Omega_m = cosmo.Omega_m / flat_E2 / pow(a_flat, 3);
+		cosmo.Omega_rad = cosmo.Omega_rad / flat_E2 / pow(a_flat, 4);
+
+		if (cosmo.Omega_m > 1.)
+		{
+			COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": total matter density numerically out of range, Omega_m = " << cosmo.Omega_m << " > 1.; setting Omega_m = 1." << endl;
+
+			cosmo.Omega_m = 1.;
+		}
+
+		cosmo.Omega_Lambda = 1. - cosmo.Omega_m - cosmo.Omega_rad;
+
+		if (cosmo.Omega_g > 0.)
+		{
+			cosmo.Omega_g *= cosmo.Omega_rad / (cosmo.Omega_ur + cosmo.Omega_g);
+		}
+
+		cosmo.Omega_ur = cosmo.Omega_rad - cosmo.Omega_g;
+
+		cosmo.Omega_b *= cosmo.Omega_m / (cosmo.Omega_b + cosmo.Omega_cdm);
+		cosmo.Omega_cdm = cosmo.Omega_m - cosmo.Omega_b;
+
+		if (cosmo.num_ncdm > 0)
+		{
+			COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": massive neutrinos not supported in LTB cosmology, setting Omega_ncdm = 0." << endl;
+
+			for (i = 0; i < cosmo.num_ncdm; i++)
+			{
+				cosmo.Omega_ncdm[i] = 0;
+			}
+		}
+
+		if (cosmo.Omega_fld > 0.)
+		{
+			COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": dark fluid not supported in LTB cosmology, setting Omega_fld = 0." << endl;
+
+			cosmo.Omega_fld = 0.;
+		}
+
+		cosmo.h *= sqrt(flat_E2);
+	}
 	
 	if (cosmo.Omega_m <= 0. || cosmo.Omega_m > 1.)
 	{
