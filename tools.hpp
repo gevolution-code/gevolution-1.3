@@ -4,9 +4,9 @@
 // 
 // Collection of analysis tools for gevolution
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: April 2019
+// Last modified: November 2024
 //
 //////////////////////////
 
@@ -646,6 +646,120 @@ int findIntersectingLightcones(lightcone_geometry & lightcone, double outer, dou
 	}
 
 	return n;
+}
+
+
+//////////////////////////
+// computeTruncatedCellVolume
+//////////////////////////
+// Description:
+//   computes the volume of cell truncated by a plane at a given
+//   distance from the origin; the cell is assumed to be a unit cube
+//
+// Arguments:
+//   vertex     vertex of cell
+//   origin     origin
+//   distance   distance of truncating plane from origin
+//
+// Returns:
+//   volume of truncated cell
+//
+//////////////////////////
+
+Real computeTruncatedCellVolume(Real vertex[3], Real origin[3], Real distance)
+{
+	Real v[3];
+
+	v[0] = vertex[0] - origin[0];
+	v[1] = vertex[1] - origin[1];
+	v[2] = vertex[2] - origin[2];
+
+	// check if cell lies within truncating distance
+	if (v[0]*v[0] + v[1]*v[1] + v[2]*v[2] < distance*distance + 0.75 - sqrt(3.)*distance) return Real(0);
+
+	if (v[0]*v[0] + v[1]*v[1] + v[2]*v[2] < distance*distance + 0.75 + sqrt(3.)*distance) return Real(1);
+
+	Real volume = Real(0);
+	Real c1, c2, s1, s2;
+
+	c2 = v[2] / sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+	s2 = sqrt(Real(1) - c2*c2);
+	c1 = atan2(v[1], v[0]);
+	s1 = sin(c1);
+	c1 = cos(c1);
+
+	// cell vertices (including two spare ones for later convenience)
+	Real x[10][3] = {{0.5, 0.5, 0.5}, {0.5, 0.5, -0.5}, {0.5, -0.5, 0.5}, {0.5, -0.5, -0.5}, {-0.5, 0.5, 0.5}, {-0.5, 0.5, -0.5}, {-0.5, -0.5, 0.5}, {-0.5, -0.5, -0.5}, {0, 0, 0}, {0, 0, 0}};
+
+	// cell faces as list of vertices, each face is a list of 4 integer indices, counting the vertices counter-clockwise when seen from the outside
+	int faces[6][4] = {{0, 1, 3, 2}, {0, 4, 5, 1}, {0, 2, 6, 4}, {7, 5, 4, 6}, {7, 6, 2, 3}, {7, 3, 1, 5}};
+
+	// offset and rotate cell vertices
+	for (int i = 0; i < 8; i++)
+	{
+		Real x1 = x[i][0] + v[0];
+		Real x2 = x[i][1] + v[1];
+		Real x3 = x[i][2] + v[2];
+
+		x[i][0] = c1*c2*x1 + s1*c2*x2 - s2*x3;
+		x[i][1] = -s1*x1 + c1*x2;
+		x[i][2] = s2*c1*x1 + s2*s1*x2 + c2*x3 - distance;
+	}
+
+	// compute volume of truncated cell using the divergence theorem
+	for (int i = 0; i < 6; i++)
+	{
+		int first = -1;
+		int prev = -1;
+
+		for (int j = 0; j < 4; j++)
+		{
+			if (x[faces[i][j]][2] >= 0)
+			{
+				if (first < 0) first = faces[i][j];
+				else if (prev >= 0)
+				{
+					volume += x[first][0] * (x[prev][1] - x[faces[i][j]][1]) * (x[prev][2] + x[faces[i][j]][2]);
+					volume += x[first][1] * (x[prev][2] - x[faces[i][j]][2]) * (x[prev][0] + x[faces[i][j]][0]);
+					volume += x[first][2] * (x[prev][0] - x[faces[i][j]][0]) * (x[prev][1] + x[faces[i][j]][1]);
+				}
+				prev = faces[i][j];
+			}
+
+			if (x[faces[i][j]][2]*x[faces[i][(j+1)%4]][2] < 0)
+			{
+				// compute clipping vertex and store it in spare location
+				Real t = x[faces[i][j]][2] / (x[faces[i][j]][2] - x[faces[i][(j+1)%4]][2]);
+				x[8][0] = x[faces[i][j]][0] + t * (x[faces[i][(j+1)%4]][0] - x[faces[i][j]][0]);
+				x[8][1] = x[faces[i][j]][1] + t * (x[faces[i][(j+1)%4]][1] - x[faces[i][j]][1]);
+				x[8][2] = 0;
+
+				if (first < 0)
+				{
+					x[9][0] = x[8][0];
+					x[9][1] = x[8][1];
+					x[9][2] = 0;
+					first = 9;
+				}
+				else if (prev >= 0)
+				{
+					volume += x[first][0] * (x[prev][1] - x[8][1]) * x[prev][2];
+					volume += x[first][1] * x[prev][2] * (x[prev][0] + x[8][0]);
+					volume += x[first][2] * (x[prev][0] - x[8][0]) * (x[prev][1] + x[8][1]);
+				}
+				prev = 8;
+			}
+		}
+
+		if (prev >= 0)
+		{
+			volume += x[first][0] * (x[prev][1] - x[first][1]) * (x[prev][2] + x[first][2]);
+			volume += x[first][1] * (x[prev][2] - x[first][2]) * (x[prev][0] + x[first][0]);
+			volume += x[first][2] * (x[prev][0] - x[first][0]) * (x[prev][1] + x[first][1]);
+		}
+	}
+
+	return volume / Real(6);
 }
 
 
