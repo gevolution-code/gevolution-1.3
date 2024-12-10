@@ -6,7 +6,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: September 2024
+// Last modified: December 2024
 //
 //////////////////////////
 
@@ -85,6 +85,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 	void * IDbuffer;
 	void * buf2;
 	set<long> IDlookup[sim.num_IDlogs];
+	double f_params[7] = {0., 0., 0., 0., 0., 0., 0.};
 	
 	filename.reserve(PARAM_MAX_LENGTH);
 	hdr.npart[1] = 0;
@@ -93,6 +94,8 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 	
 	if (ic.z_ic > -1.)
 		a = 1. / (1. + ic.z_ic);
+
+	f_params[0] = a;
 	
 	strcpy(pcls_cdm_info.type_name, "part_simple");
 	pcls_cdm_info.mass = 0.;
@@ -146,7 +149,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 	}
 	
 	COUT << " " << sim.numpcl[0] << " cdm particles read successfully." << endl;
-	maxvel[0] = pcls_cdm->updateVel(update_q, 0., &phi, 1, &a);
+	maxvel[0] = pcls_cdm->updateVel(update_q, 0., &phi, 1, f_params);
 	
 	if (sim.baryon_flag == 1)
 	{
@@ -199,7 +202,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 		}
 		
 		COUT << " " << sim.numpcl[1] << " baryon particles read successfully." << endl;
-		maxvel[1] = pcls_b->updateVel(update_q, 0., &phi, 1, &a);
+		maxvel[1] = pcls_b->updateVel(update_q, 0., &phi, 1, f_params);
 	}
 	else
 		sim.baryon_flag = 0;
@@ -260,7 +263,7 @@ void readIC(metadata & sim, icsettings & ic, cosmology & cosmo, const double fou
 		}
 		
 		COUT << " " << sim.numpcl[sim.baryon_flag+1+p] << " ncdm particles read successfully." << endl;
-		maxvel[sim.baryon_flag+1+p] = pcls_ncdm[p].updateVel(update_q, 0., &phi, 1, &a);
+		maxvel[sim.baryon_flag+1+p] = pcls_ncdm[p].updateVel(update_q, 0., &phi, 1, f_params);
 	}
 	
 	if (sim.gr_flag > 0 && ic.metricfile[0][0] != '\0')

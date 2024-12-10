@@ -28,7 +28,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: September 2024
+// Last modified: December 2024
 //
 //////////////////////////
 
@@ -87,14 +87,14 @@ int main(int argc, char **argv)
 	double update_q_time = 0;
 	int update_q_count = 0;
 	double moveParts_time = 0;
-	int  moveParts_count =0;	
+	int  moveParts_count = 0;	
 #endif  //BENCHMARK
 	
 	int n = 0, m = 0;
 	int io_size = 0;
 	int io_group_size = 0;
 	
-	int i, j, cycle = 0, snapcount = 0, pkcount = 0, restartcount = 0, usedparams, numparam = 0, numspecies, done_hij;
+	int cycle = 0, snapcount = 0, pkcount = 0, restartcount = 0, usedparams, numparam = 0, numspecies, done_hij;
 	int numsteps_ncdm[MAX_PCL_SPECIES-2];
 	long numpts3d;
 	int box[3];
@@ -110,12 +110,18 @@ int main(int argc, char **argv)
 	cosmology cosmo;
 	icsettings ic;
 	double T00hom;
+	Real phi_hom;
+
+#ifdef ANISOTROPIC_EXPANSION
+	Real hij_hom[5] = {0.,0.,0.,0.,0.}; // hij_hom = {h_00, h_01, h_02, h_11, h_12} - only the symmetric part of the tensor is stored, h_33 = -h_00-h_11 due to the tracelessness condition
+	Real hijprime_hom[5] = {0.,0.,0.,0.,0.}; // hijprime_hom = {h_00', h_01', h_02', h_11', h_12'}
+#endif
 
 #ifndef H5_DEBUG
 	H5Eset_auto2 (H5E_DEFAULT, NULL, NULL);
 #endif
 	
-	for (i=1 ; i < argc ; i++ ){
+	for (int i = 1 ; i < argc ; i++){
 		if ( argv[i][0] != '-' )
 			continue;
 		switch(argv[i][1]) {
@@ -227,11 +233,11 @@ int main(int argc, char **argv)
 	Field<Real> * update_cdm_fields[3];
 	Field<Real> * update_b_fields[3];
 	Field<Real> * update_ncdm_fields[3];
-	double f_params[5];
+	double f_params[7] = {0., 0., 0., 0., 0., 0., 0.};
 	set<long> ** IDbacklog;
 
 	IDbacklog = new set<long> * [sim.num_IDlogs];
-	for (i = 0; i < sim.num_IDlogs; i++)
+	for (int i = 0; i < sim.num_IDlogs; i++)
 		IDbacklog[i] = new set<long> [MAX_PCL_SPECIES];
 
 	Field<Real> phi;
@@ -298,7 +304,7 @@ int main(int argc, char **argv)
 	dx = 1.0 / (double) sim.numpts;
 	numpts3d = (long) sim.numpts * (long) sim.numpts * (long) sim.numpts;
 	
-	for (i = 0; i < 3; i++) // particles may never move farther than to the adjacent domain
+	for (int i = 0; i < 3; i++) // particles may never move farther than to the adjacent domain
 	{
 		if (lat.sizeLocal(i)-1 < sim.movelimit)
 			sim.movelimit = lat.sizeLocal(i)-1;
@@ -348,7 +354,7 @@ int main(int argc, char **argv)
 	
 	if (sim.gr_flag > 0)
 	{
-		for (i = 0; i < numspecies; i++)
+		for (int i = 0; i < numspecies; i++)
 			maxvel[i] /= sqrt(maxvel[i] * maxvel[i] + 1.0);
 	}
 
@@ -370,8 +376,8 @@ int main(int argc, char **argv)
 #ifdef TENSOR_EVOLUTION
 	for (kFT.first(); kFT.test(); kFT.next())
 	{
-		for (i = 0; i < hijprimeFT.components(); i++)
-			hijprimeFT(kFT, i) = Cplx(0.,0.);
+		for (int i = 0; i < hijprimeFT.components(); i++)
+			hijprimeFT(kFT, i) = Cplx(0,0);
 	}
 #endif
 	
@@ -480,7 +486,7 @@ int main(int argc, char **argv)
 			projection_T00_project(&pcls_cdm, &source, a, &phi);
 			if (sim.baryon_flag)
 				projection_T00_project(&pcls_b, &source, a, &phi);
-			for (i = 0; i < cosmo.num_ncdm; i++)
+			for (int i = 0; i < cosmo.num_ncdm; i++)
 			{
 				if (a >= 1. / (sim.z_switch_deltancdm[i] + 1.) && sim.numpcl[1+sim.baryon_flag+i] > 0)
 					projection_T00_project(pcls_ncdm+i, &source, a, &phi);
@@ -497,7 +503,7 @@ int main(int argc, char **argv)
 			scalarProjectionCIC_project(&pcls_cdm, &source);
 			if (sim.baryon_flag)
 				scalarProjectionCIC_project(&pcls_b, &source);
-			for (i = 0; i < cosmo.num_ncdm; i++)
+			for (int i = 0; i < cosmo.num_ncdm; i++)
 			{
 				if (a >= 1. / (sim.z_switch_deltancdm[i] + 1.) && sim.numpcl[1+sim.baryon_flag+i] > 0)
 					scalarProjectionCIC_project(pcls_ncdm+i, &source);
@@ -522,7 +528,7 @@ int main(int argc, char **argv)
 			projection_T0i_project(&pcls_cdm, &Bi, &phi);
 			if (sim.baryon_flag)
 				projection_T0i_project(&pcls_b, &Bi, &phi);
-			for (i = 0; i < cosmo.num_ncdm; i++)
+			for (int i = 0; i < cosmo.num_ncdm; i++)
 			{
 				if (a >= 1. / (sim.z_switch_Bncdm[i] + 1.) && sim.numpcl[1+sim.baryon_flag+i] > 0)
 					projection_T0i_project(pcls_ncdm+i, &Bi, &phi);
@@ -531,15 +537,27 @@ int main(int argc, char **argv)
 		}
 		
 		projection_init(&Sij);
+#ifdef ANISOTROPIC_EXPANSION
+		projection_Tij_project(&pcls_cdm, &Sij, a, &phi, 1., hij_hom);
+#else
 		projection_Tij_project(&pcls_cdm, &Sij, a, &phi);
+#endif
 		if (sim.baryon_flag)
+#ifdef ANISOTROPIC_EXPANSION
+			projection_Tij_project(&pcls_b, &Sij, a, &phi, 1., hij_hom);
+#else
 			projection_Tij_project(&pcls_b, &Sij, a, &phi);
+#endif
 		if (a >= 1. / (sim.z_switch_linearchi + 1.))
 		{
-			for (i = 0; i < cosmo.num_ncdm; i++)
+			for (int i = 0; i < cosmo.num_ncdm; i++)
 			{
 				if (sim.numpcl[1+sim.baryon_flag+i] > 0)
+#ifdef ANISOTROPIC_EXPANSION
+					projection_Tij_project(pcls_ncdm+i, &Sij, a, &phi, 1., hij_hom);
+#else
 					projection_Tij_project(pcls_ncdm+i, &Sij, a, &phi);
+#endif
 			}
 		}
 		projection_Tij_comm(&Sij);
@@ -612,24 +630,8 @@ int main(int argc, char **argv)
 
 		phi.updateHalo();  // communicate halo values
 
-		// record some background data
 		if (kFT.setCoord(0, 0, 0))
-		{
-			sprintf(filename, "%s%s_background.dat", sim.output_path, sim.basename_generic);
-			outfile = fopen(filename, "a");
-			if (outfile == NULL)
-			{
-				cout << " error opening file for background output!" << endl;
-			}
-			else
-			{
-				if (cycle == 0)
-					fprintf(outfile, "# background statistics\n# cycle   tau/boxsize    a             conformal H/H0  phi(k=0)       T00(k=0)\n");
-				fprintf(outfile, " %6d   %e   %e   %e   %e   %e\n", cycle, tau, a, Hconf(a, fourpiG, cosmo) / Hconf(1., fourpiG, cosmo), scalarFT(kFT).real(), T00hom);
-				fclose(outfile);
-			}
-		}
-		// done recording background data
+			phi_hom = scalarFT(kFT).real();
 		
 		prepareFTsource<Real>(phi, Sij, Sij, 2. * fourpiG * dx * dx / a);  // prepare nonlinear source for additional equations
 
@@ -698,12 +700,75 @@ int main(int argc, char **argv)
 			else
 				evolveFTtensor(SijFT, hijFT, hijprimeFT, Hconf(a, fourpiG, cosmo), dtau, dtau_old);
 #endif
+
+#ifdef ANISOTROPIC_EXPANSION
+			if (kFT.setCoord(0, 0, 0))
+			{
+#ifdef TENSOR_EVOLUTION
+				hij_hom[0] = hijFT(kFT, 0, 0).real();
+				hij_hom[1] = hijFT(kFT, 0, 1).real();
+				hij_hom[2] = hijFT(kFT, 0, 2).real();
+				hij_hom[3] = hijFT(kFT, 1, 1).real();
+				hij_hom[4] = hijFT(kFT, 1, 2).real();
+
+				hijprime_hom[0] = hijprimeFT(kFT, 0, 0).real();
+				hijprime_hom[1] = hijprimeFT(kFT, 0, 1).real();
+				hijprime_hom[2] = hijprimeFT(kFT, 0, 2).real();
+				hijprime_hom[3] = hijprimeFT(kFT, 1, 1).real();
+				hijprime_hom[4] = hijprimeFT(kFT, 1, 2).real();
+#else
+				for (int i = 0; i < 5; i++)
+					hij_hom[i] += hijprime_hom[i] * dtau_old;
+				
+				hijprime_hom[0] = ((1. - 0.5 * (dtau_old + dtau) * Hconf(a, fourpiG, cosmo)) * hijprime_hom[0] + (dtau_old + dtau) * (Real(2) * SijFT(kFT, 0, 0).real() - SijFT(kFT, 1, 1).real() - SijFT(kFT, 2, 2).real()) / Real(3) / sim.numpts) / (1. + 0.5 * (dtau_old + dtau) * Hconf(a, fourpiG, cosmo));
+				hijprime_hom[1] = ((1. - 0.5 * (dtau_old + dtau) * Hconf(a, fourpiG, cosmo)) * hijprime_hom[1] + (dtau_old + dtau) * SijFT(kFT, 0, 1).real() / sim.numpts) / (1. + 0.5 * (dtau_old + dtau) * Hconf(a, fourpiG, cosmo));
+				hijprime_hom[2] = ((1. - 0.5 * (dtau_old + dtau) * Hconf(a, fourpiG, cosmo)) * hijprime_hom[2] + (dtau_old + dtau) * SijFT(kFT, 0, 2).real() / sim.numpts) / (1. + 0.5 * (dtau_old + dtau) * Hconf(a, fourpiG, cosmo));
+				hijprime_hom[3] = ((1. - 0.5 * (dtau_old + dtau) * Hconf(a, fourpiG, cosmo)) * hijprime_hom[3] + (dtau_old + dtau) * (Real(2) * SijFT(kFT, 1, 1).real() - SijFT(kFT, 0, 0).real() - SijFT(kFT, 2, 2).real()) / Real(3) / sim.numpts) / (1. + 0.5 * (dtau_old + dtau) * Hconf(a, fourpiG, cosmo));
+				hijprime_hom[4] = ((1. - 0.5 * (dtau_old + dtau) * Hconf(a, fourpiG, cosmo)) * hijprime_hom[4] + (dtau_old + dtau) * SijFT(kFT, 1, 2).real() / sim.numpts) / (1. + 0.5 * (dtau_old + dtau) * Hconf(a, fourpiG, cosmo));
+#endif
+			}
+			
+			parallel.broadcast(hij_hom, 5, 0);
+			parallel.broadcast(hijprime_hom, 5, 0);
+
+			// anisotropic expansion parameters for particle updates
+			f_params[2] = hij_hom[0];
+			f_params[3] = hij_hom[1];
+			f_params[4] = hij_hom[2];
+			f_params[5] = hij_hom[3];
+			f_params[6] = hij_hom[4];
+#endif
 		}
 
 #ifdef BENCHMARK 
 		gravity_solver_time += MPI_Wtime() - ref_time;
 		ref_time = MPI_Wtime();
 #endif
+
+		// record some background data
+		if (kFT.setCoord(0, 0, 0))
+		{
+			sprintf(filename, "%s%s_background.dat", sim.output_path, sim.basename_generic);
+			outfile = fopen(filename, "a");
+			if (outfile == NULL)
+			{
+				cout << " error opening file for background output!" << endl;
+			}
+			else
+			{
+#ifdef ANISOTROPIC_EXPANSION
+				if (cycle == 0)
+					fprintf(outfile, "# background statistics\n# cycle   tau/boxsize    a             conformal H/H0  phi(k=0)       T00(k=0)       h00(k=0)       h01(k=0)       h02(k=0)       h11(k=0)       h12(k=0)\n");
+				fprintf(outfile, " %6d   %e   %e   %e   %e   %e   %e   %e   %e   %e   %e\n", cycle, tau, a, Hconf(a, fourpiG, cosmo) / Hconf(1., fourpiG, cosmo), phi_hom, T00hom, hij_hom[0], hij_hom[1], hij_hom[2], hij_hom[3], hij_hom[4]);
+#else
+				if (cycle == 0)
+					fprintf(outfile, "# background statistics\n# cycle   tau/boxsize    a             conformal H/H0  phi(k=0)       T00(k=0)\n");
+				fprintf(outfile, " %6d   %e   %e   %e   %e   %e\n", cycle, tau, a, Hconf(a, fourpiG, cosmo) / Hconf(1., fourpiG, cosmo), phi_hom, T00hom);
+#endif
+				fclose(outfile);
+			}
+		}
+		// done recording background data
 
 		// lightcone output
 		if (sim.num_lightcone > 0)
@@ -792,6 +857,7 @@ int main(int argc, char **argv)
 
 		if (pkcount >= sim.num_pk && snapcount >= sim.num_snapshot)
 		{
+			int i;
 			for (i = 0; i < sim.num_lightcone; i++)
 			{
 				if (sim.lightcone[i].z + 1. < 1. / a)
@@ -801,7 +867,7 @@ int main(int argc, char **argv)
 		}
 		
 		// compute number of step subdivisions for ncdm particle updates
-		for (i = 0; i < cosmo.num_ncdm; i++)
+		for (int i = 0; i < cosmo.num_ncdm; i++)
 		{
 			if (dtau * maxvel[i+1+sim.baryon_flag] > dx * sim.movelimit)
 				numsteps_ncdm[i] = (int) ceil(dtau * maxvel[i+1+sim.baryon_flag] / dx / sim.movelimit);
@@ -818,7 +884,7 @@ int main(int argc, char **argv)
 			
 			COUT << "), time step / Hubble time = " << Hconf(a, fourpiG, cosmo) * dtau;
 			
-			for (i = 0; i < cosmo.num_ncdm; i++)
+			for (int i = 0; i < cosmo.num_ncdm; i++)
 			{
 				if (i == 0)
 				{
@@ -837,13 +903,13 @@ int main(int argc, char **argv)
 #ifdef BENCHMARK
 		ref2_time = MPI_Wtime();
 #endif
-		for (i = 0; i < cosmo.num_ncdm; i++) // non-cold DM particle update
+		for (int i = 0; i < cosmo.num_ncdm; i++) // non-cold DM particle update
 		{
 			if (sim.numpcl[1+sim.baryon_flag+i] == 0) continue;
 			
 			tmp = a;
 			
-			for (j = 0; j < numsteps_ncdm[i]; j++)
+			for (int j = 0; j < numsteps_ncdm[i]; j++)
 			{
 				f_params[0] = tmp;
 				f_params[1] = tmp * tmp * sim.numpts;
@@ -925,7 +991,7 @@ int main(int argc, char **argv)
 		
 		if (sim.gr_flag > 0)
 		{
-			for (i = 0; i < numspecies; i++)
+			for (int i = 0; i < numspecies; i++)
 				maxvel[i] /= sqrt(maxvel[i] * maxvel[i] + 1.0);
 		}
 		// done particle update
@@ -995,7 +1061,7 @@ int main(int argc, char **argv)
 if (zetaFT != NULL)
 	delete[] zetaFT;
 
-for (i = 0; i < sim.num_IDlogs; i++)
+for (int i = 0; i < sim.num_IDlogs; i++)
 {
 	if (IDbacklog[i] != NULL)
 		delete[] IDbacklog[i];

@@ -6,9 +6,9 @@
 // generating the full phase space for relativistic particles
 // [see C.-P. Ma and E. Bertschinger, Astrophys. J. 429, 22 (1994)]
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: November 2019
+// Last modified: December 2024
 //
 //////////////////////////
 
@@ -99,6 +99,7 @@ void generateIC_prevolution(metadata & sim, icsettings & ic, cosmology & cosmo, 
 	Field<Real> * ic_fields[2];
 	int cycle = 0;
     int relax_cycles = 0;
+	double f_params[7] = {0., 0., 0., 0., 0., 0., 0.};
 
 	Real * kbin;
 	Real * power;
@@ -126,6 +127,7 @@ void generateIC_prevolution(metadata & sim, icsettings & ic, cosmology & cosmo, 
 
 	a = 1. / (1. + ic.z_ic);
 	tau = particleHorizon(a, fourpiG, cosmo);
+	f_params[0] = a;
 
 	COUT << " initial particle horizon tau = " << tau * sim.numpts << " lattice units." << endl;
 
@@ -481,7 +483,7 @@ void generateIC_prevolution(metadata & sim, icsettings & ic, cosmology & cosmo, 
 					for (p = 0; p < cosmo.num_ncdm; p++)
 					{
 						if (ic.numtile[1+sim.baryon_flag+p] < 1) maxvel[1+sim.baryon_flag+p] = 0;
-						else maxvel[1+sim.baryon_flag+p] = pcls_ncdm[p].updateVel(update_q, dtau_old / 2., ic_fields, 2, &a);
+						else maxvel[1+sim.baryon_flag+p] = pcls_ncdm[p].updateVel(update_q, dtau_old / 2., ic_fields, 2, f_params);
 					}
 
 					dtau_old = 0.;
@@ -625,33 +627,35 @@ void generateIC_prevolution(metadata & sim, icsettings & ic, cosmology & cosmo, 
 	    
 		if (relax_cycles > 0)
 		{
-	    	maxvel[0] = pcls_cdm->updateVel(update_q, (dtau + dtau_old) / 2., ic_fields, 1, &a);
+	    	maxvel[0] = pcls_cdm->updateVel(update_q, (dtau + dtau_old) / 2., ic_fields, 1, f_params);
 			if (sim.baryon_flag)
-				maxvel[1] = pcls_b->updateVel(update_q, (dtau + dtau_old) / 2., ic_fields, 1, &a);
+				maxvel[1] = pcls_b->updateVel(update_q, (dtau + dtau_old) / 2., ic_fields, 1, f_params);
 		}
 
 	    for (p = 0; p < cosmo.num_ncdm; p++)
 		{
 			if (ic.numtile[((sim.baryon_flag == 1) ? 2 : 1)+p] < 1)	maxvel[((sim.baryon_flag == 1) ? 2 : 1)+p] = 0;
-			else maxvel[((sim.baryon_flag == 1) ? 2 : 1)+p] = pcls_ncdm[p].updateVel(update_q, (dtau + dtau_old) / 2., ic_fields, 2, &a);
+			else maxvel[((sim.baryon_flag == 1) ? 2 : 1)+p] = pcls_ncdm[p].updateVel(update_q, (dtau + dtau_old) / 2., ic_fields, 2, f_params);
 		}
 
 		rungekutta4bg(a, fourpiG, cosmo, 0.5 * dtau);
+		f_params[0] = a;
 
 		if (relax_cycles > 0)
 		{
-	    	pcls_cdm->moveParticles(update_pos, dtau, ic_fields, 0, &a);
+	    	pcls_cdm->moveParticles(update_pos, dtau, ic_fields, 0, f_params);
 			if (sim.baryon_flag)
-				pcls_b->moveParticles(update_pos, dtau, ic_fields, 0, &a);
+				pcls_b->moveParticles(update_pos, dtau, ic_fields, 0, f_params);
 		}
 
 	    for (p = 0; p < cosmo.num_ncdm; p++)
 		{
 			if (ic.numtile[((sim.baryon_flag == 1) ? 2 : 1)+p] < 1) continue;
-		        pcls_ncdm[p].moveParticles(update_pos, dtau, ic_fields, 2, &a);
+		        pcls_ncdm[p].moveParticles(update_pos, dtau, ic_fields, 2, f_params);
 		}
 
 		rungekutta4bg(a, fourpiG, cosmo, 0.5 * dtau);
+		f_params[0] = a;
 	    tau += dtau;
 	    
 	    dtau_old = dtau;

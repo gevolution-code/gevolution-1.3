@@ -6,7 +6,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: September 2024
+// Last modified: December 2024
 //
 //////////////////////////
 
@@ -2247,7 +2247,12 @@ parameter * params, int & numparam)
 			parallel.sum(mean_q);
 			COUT << " species " << p+1 << " Fermi-Dirac distribution had mean q/m = " << mean_q / sim.numpcl[1+sim.baryon_flag+p] << endl;
 		}
+#ifdef ANISOTROPIC_EXPANSION
+		double f_params[7] = {a, 0., 0., 0., 0., 0., 0.};
+		maxvel[1+sim.baryon_flag+p] = pcls_ncdm[p].updateVel(update_q, 0., &phi, 1, f_params);
+#else
 		maxvel[1+sim.baryon_flag+p] = pcls_ncdm[p].updateVel(update_q, 0., &phi, 1, &a);
+#endif
 	}
 	
 	projection_init(Bi);
