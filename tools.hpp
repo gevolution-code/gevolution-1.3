@@ -675,24 +675,27 @@ Real computeTruncatedCellVolume(Real vertex[3], Real origin[3], Real distance)
 	v[2] = vertex[2] - origin[2];
 
 	// check if cell lies within truncating distance
-	if (v[0]*v[0] + v[1]*v[1] + v[2]*v[2] < distance*distance + 0.75 - sqrt(3.)*distance) return Real(0);
+	//if (v[0]*v[0] + v[1]*v[1] + v[2]*v[2] < distance*distance + 0.75 - sqrt(3.)*distance) return Real(0);
+	if (v[0]*v[0] + v[1]*v[1] + v[2]*v[2] < (distance-2)*(distance-2)) return Real(0);
 
-	if (v[0]*v[0] + v[1]*v[1] + v[2]*v[2] < distance*distance + 0.75 + sqrt(3.)*distance) return Real(1);
+	if (v[0]*v[0] + v[1]*v[1] + v[2]*v[2] > (distance+2)*(distance+2)) return Real(1);
 
 	Real volume = Real(0);
 	Real c1, c2, s1, s2;
 
 	c2 = v[2] / sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
-	s2 = sqrt(Real(1) - c2*c2);
-	c1 = atan2(v[1], v[0]);
+	s2 = (c2*c2 >= Real(1) ? Real(0) : sqrt(Real(1) - c2*c2));
+	c1 = (v[0] != Real(0) || v[1] != Real(0)) ? atan2(v[1], v[0]) : Real(0);
 	s1 = sin(c1);
 	c1 = cos(c1);
 
 	// cell vertices (including two spare ones for later convenience)
-	Real x[10][3] = {{0.5, 0.5, 0.5}, {0.5, 0.5, -0.5}, {0.5, -0.5, 0.5}, {0.5, -0.5, -0.5}, {-0.5, 0.5, 0.5}, {-0.5, 0.5, -0.5}, {-0.5, -0.5, 0.5}, {-0.5, -0.5, -0.5}, {0, 0, 0}, {0, 0, 0}};
+	// Real x[10][3] = {{0.5, 0.5, 0.5}, {0.5, 0.5, -0.5}, {0.5, -0.5, 0.5}, {0.5, -0.5, -0.5}, {-0.5, 0.5, 0.5}, {-0.5, 0.5, -0.5}, {-0.5, -0.5, 0.5}, {-0.5, -0.5, -0.5}, {0, 0, 0}, {0, 0, 0}};
+	Real x[10][3] = {{-0.5, -0.5, -0.5}, {0.5, -0.5, -0.5}, {0.5, 0.5, -0.5}, {-0.5, 0.5, -0.5}, {-0.5, -0.5, 0.5}, {0.5, -0.5, 0.5}, {0.5, 0.5, 0.5}, {-0.5, 0.5, 0.5}, {0, 0, 0}, {0, 0, 0}};
 
 	// cell faces as list of vertices, each face is a list of 4 integer indices, counting the vertices counter-clockwise when seen from the outside
-	int faces[6][4] = {{0, 1, 3, 2}, {0, 4, 5, 1}, {0, 2, 6, 4}, {7, 5, 4, 6}, {7, 6, 2, 3}, {7, 3, 1, 5}};
+	//int faces[6][4] = {{0, 1, 3, 2}, {0, 4, 5, 1}, {0, 2, 6, 4}, {7, 5, 4, 6}, {7, 6, 2, 3}, {7, 3, 1, 5}};
+	int faces[6][4] = {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4}, {2, 3, 7, 6}, {0, 4, 7, 3}, {1, 2, 6, 5}};
 
 	// offset and rotate cell vertices
 	for (int i = 0; i < 8; i++)
@@ -717,7 +720,7 @@ Real computeTruncatedCellVolume(Real vertex[3], Real origin[3], Real distance)
 			if (x[faces[i][j]][2] >= 0)
 			{
 				if (first < 0) first = faces[i][j];
-				else if (prev >= 0)
+				if (prev >= 0)
 				{
 					volume += x[first][0] * (x[prev][1] - x[faces[i][j]][1]) * (x[prev][2] + x[faces[i][j]][2]);
 					volume += x[first][1] * (x[prev][2] - x[faces[i][j]][2]) * (x[prev][0] + x[faces[i][j]][0]);
@@ -730,23 +733,30 @@ Real computeTruncatedCellVolume(Real vertex[3], Real origin[3], Real distance)
 			{
 				// compute clipping vertex and store it in spare location
 				Real t = x[faces[i][j]][2] / (x[faces[i][j]][2] - x[faces[i][(j+1)%4]][2]);
-				x[8][0] = x[faces[i][j]][0] + t * (x[faces[i][(j+1)%4]][0] - x[faces[i][j]][0]);
-				x[8][1] = x[faces[i][j]][1] + t * (x[faces[i][(j+1)%4]][1] - x[faces[i][j]][1]);
-				x[8][2] = 0;
+				//x[8][0] = x[faces[i][j]][0] + t * (x[faces[i][(j+1)%4]][0] - x[faces[i][j]][0]);
+				//x[8][1] = x[faces[i][j]][1] + t * (x[faces[i][(j+1)%4]][1] - x[faces[i][j]][1]);
+				//x[8][2] = 0;
+				Real x0 = x[faces[i][j]][0] + t * (x[faces[i][(j+1)%4]][0] - x[faces[i][j]][0]);
+				Real x1 = x[faces[i][j]][1] + t * (x[faces[i][(j+1)%4]][1] - x[faces[i][j]][1]);
 
 				if (first < 0)
 				{
-					x[9][0] = x[8][0];
-					x[9][1] = x[8][1];
+					x[9][0] = x0; //x[8][0];
+					x[9][1] = x1; //x[8][1];
 					x[9][2] = 0;
 					first = 9;
 				}
-				else if (prev >= 0)
+				if (prev >= 0)
 				{
-					volume += x[first][0] * (x[prev][1] - x[8][1]) * x[prev][2];
-					volume += x[first][1] * x[prev][2] * (x[prev][0] + x[8][0]);
-					volume += x[first][2] * (x[prev][0] - x[8][0]) * (x[prev][1] + x[8][1]);
+					volume += x[first][0] * (x[prev][1] - x1) * x[prev][2];
+					volume += x[first][1] * x[prev][2] * (x[prev][0] + x0);
+					volume += x[first][2] * (x[prev][0] - x0) * (x[prev][1] + x1);
 				}
+
+				x[8][0] = x0;
+				x[8][1] = x1;
+				x[8][2] = 0;
+
 				prev = 8;
 			}
 		}
@@ -758,6 +768,16 @@ Real computeTruncatedCellVolume(Real vertex[3], Real origin[3], Real distance)
 			volume += x[first][2] * (x[prev][0] - x[first][0]) * (x[prev][1] + x[first][1]);
 		}
 	}
+
+	/*if (volume < -1e-4 || volume > 6.0001)
+	{
+		cout << " /!\\ warning: volume of truncated cell is " << volume / Real(6) << " at v = (" << v[0] << ", " << v[1] << ", " << v[2] << "), distance = " << distance << ", sin(theta) = " << s2 << ", cos(theta) = " << c2 << ", sin(phi) = " << s1 << ", cos(phi) = " << c1 << endl;
+		cout << "  vertices (after rotation): " << endl;
+		for (int i = 0; i < 8; i++)
+		{
+			cout << "   " << x[i][0] << " " << x[i][1] << " " << x[i][2] << endl;
+		}
+	}*/
 
 	return volume / Real(6);
 }

@@ -94,6 +94,7 @@
 #undef ICGEN_FALCONIC
 #define ICGEN_FALCONIC              4
 #endif
+#define ICGEN_CURVATURE			    5
 
 #define VECTOR_PARABOLIC            0
 #define VECTOR_ELLIPTIC             1

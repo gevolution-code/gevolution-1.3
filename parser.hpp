@@ -6,7 +6,7 @@
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: September 2024
+// Last modified: March 2025
 //
 //////////////////////////
 
@@ -797,6 +797,8 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 			ic.generator = ICGEN_BASIC;
 		else if ((par_string[0] == 'R' || par_string[0] == 'r') && par_string[2] != 'L' && par_string[2] != 'l')
 			ic.generator = ICGEN_READ_FROM_DISK;
+		else if (par_string[0] == 'L' || par_string[0] == 'l')
+			ic.generator = ICGEN_CURVATURE;
 #ifdef ICGEN_PREVOLUTION
 		else if (par_string[0] == 'P' || par_string[0] == 'p')
 			ic.generator = ICGEN_PREVOLUTION;
@@ -1828,10 +1830,12 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 			{
 				COUT << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": LTB radius must be smaller than half the box size!" << endl;
 			}
+
+			sim.LTB_radius /= sim.boxsize;
 		}
 		else
 		{
-			sim.LTB_radius = (0.5 - 1.5/sim.numpts)*sim.boxsize;
+			sim.LTB_radius = 0.5 - 1.5/sim.numpts;
 		}
 
 		cosmo.Omega_Lambda = 1. - cosmo.Omega_m - cosmo.Omega_rad - ic.LTB_Omega_k;
@@ -1844,6 +1848,10 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 
 		double lookback_time = LookbackTime(sim.z_in, cosmo);
 
+		COUT << " lookback time computed as " << lookback_time * C_SPEED_OF_LIGHT << " Mpc" << endl;
+
+		//double phi0 = -0.25 * sim.LTB_radius * sim.LTB_radius * sim.boxsize * sim.boxsize / ((1. + sim.z_in) * (1. + sim.z_in) * C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT * cosmo.h * cosmo.h);
+
 		// compute the LTB cosmological parameters on the initial slice
 
 		double LTB_E2 = cosmo.Omega_m * pow(1. + sim.z_in, 3) + cosmo.Omega_rad * pow(1. + sim.z_in, 4) + cosmo.Omega_Lambda + ic.LTB_Omega_k * pow(1. + sim.z_in, 2);
@@ -1853,6 +1861,8 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		double LTB_Omega_rad = cosmo.Omega_rad * pow(1. + sim.z_in, 4) / LTB_E2;
 		double LTB_Omega_Lambda = cosmo.Omega_Lambda / LTB_E2;
 
+		COUT << " initial curved-space cosmological parameters are: Omega_m* = " << LTB_Omega_m << ", Omega_rad* = " << LTB_Omega_rad << ", Omega_k* = " << ic.LTB_Omega_k << ", h = " << LTB_h << endl;
+
 		// compute the flat counterparts
 
 		double d1 = -0.6 * ic.LTB_Omega_k * (1. + 11. * ic.LTB_Omega_k / 35.);
@@ -1860,8 +1870,14 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		cosmo.Omega_Lambda = LTB_Omega_Lambda * LTB_h * LTB_h / (cosmo.h * cosmo.h);
 		cosmo.Omega_m = LTB_Omega_m * LTB_h * LTB_h / (cosmo.h * cosmo.h) / (1. + d1);
 		cosmo.Omega_rad = LTB_Omega_rad * LTB_h * LTB_h / (cosmo.h * cosmo.h);
+
+		COUT << " initial flat-space cosmological parameters are: Omega_m* = " << cosmo.Omega_m << ", Omega_rad* = " << cosmo.Omega_rad << ", Omega_Lambda* = " << cosmo.Omega_Lambda << ", h = " << cosmo.h << endl;
 		
 		// compute expansion factor in flat cosmology
+
+		//phi0 *= d1 * cosmo.h * cosmo.h;
+
+		//COUT << " estimated gravitational potential at the center of the LTB model: phi(r=0) = " << phi0 << endl;
 
 		gsl_odeiv2_system flat_sys;
 		flat_sys.function = [](double t, const double y[], double dydt[], void *cosmo) -> int
@@ -1886,6 +1902,23 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		COUT << " initial redshift (curved space) = " << sim.z_in << ", initial redshift (flat space) = " << a_flat - 1. << endl;
 
 		double flat_E2 = cosmo.Omega_m / pow(a_flat, 3) + cosmo.Omega_rad / pow(a_flat, 4) + cosmo.Omega_Lambda;
+
+		double phi0 = -0.25 * d1 * sim.LTB_radius * sim.LTB_radius * sim.boxsize * sim.boxsize / (a_flat * a_flat * C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT * flat_E2);
+
+		COUT << " estimated gravitational potential at the center of the LTB model (flat cosmology): phi(r=0) = " << phi0 << endl;
+
+		flat_driver = gsl_odeiv2_driver_alloc_y_new(&flat_sys, gsl_odeiv2_step_rkf45, 1e-6, 1e-6, 0.0);
+
+		a_flat = 1.;
+		t = 0.;
+
+		gsl_odeiv2_driver_apply(flat_driver, &t, lookback_time * (1. - phi0), &a_flat);
+
+		gsl_odeiv2_driver_free(flat_driver);
+
+		COUT << " corrected for time dilation - revised initial redshift (flat space) = " << a_flat - 1. << endl;
+
+		flat_E2 = cosmo.Omega_m / pow(a_flat, 3) + cosmo.Omega_rad / pow(a_flat, 4) + cosmo.Omega_Lambda;
 
 		sim.z_in = a_flat - 1.;
 		cosmo.Omega_m = cosmo.Omega_m / flat_E2 / pow(a_flat, 3);
