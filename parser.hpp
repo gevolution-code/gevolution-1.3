@@ -762,7 +762,7 @@ bool parseFieldSpecifiers(parameter * & params, const int numparam, const char *
 
 int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosmology & cosmo, icsettings & ic)
 {
-	char par_string[PARAM_MAX_LENGTH];
+	char par_string[2*PARAM_MAX_LENGTH+32];
 	char * pptr[MAX_PCL_SPECIES];
 	int usedparams = 0;
 	int i;
@@ -1961,6 +1961,32 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		}
 
 		cosmo.h *= sqrt(flat_E2);
+
+		if (parallel.isRoot())
+		{
+			FILE * outfile = nullptr;
+
+			sprintf(par_string, "%s%s_flat_cosmology.ini", sim.output_path, sim.basename_generic);
+			outfile = fopen(par_string, "w");
+
+			if (outfile != nullptr)
+			{
+				fprintf(outfile, "# Flat cosmology parameters\n");
+				fprintf(outfile, "Omega_Lambda = %.12g\n", cosmo.Omega_Lambda);
+				fprintf(outfile, "Omega_b      = %.12g\n", cosmo.Omega_b);
+				fprintf(outfile, "Omega_cdm    = %.12g\n", cosmo.Omega_cdm);
+				fprintf(outfile, "Omega_g      = %.12g\n", cosmo.Omega_g);
+				fprintf(outfile, "Omega_ur     = %.12g\n", cosmo.Omega_ur);
+				fprintf(outfile, "h            = %.12g\n", cosmo.h);
+				fprintf(outfile, "z_in         = %.12g\n", sim.z_in);
+
+				fclose(outfile);
+			}
+			else
+			{
+				COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": could not write flat cosmology parameters to file " << par_string << endl;
+			}
+		}
 	}
 	
 	if (cosmo.Omega_m <= 0. || cosmo.Omega_m > 1.)

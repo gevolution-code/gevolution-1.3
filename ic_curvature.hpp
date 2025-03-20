@@ -94,10 +94,10 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 		Real w1 = Real(1) - computeTruncatedCellVolume(vertex, origin, inner_radius * sim.numpts);
 		Real w2 = Real(1) - computeTruncatedCellVolume(vertex, origin, sim.LTB_radius * sim.numpts);
 
-		if (w1 > 1 || w1 < -1.0e-5)
+		/*if (w1 > 1 || w1 < -1.0e-5)
 			cout << "error in position [" << x.coord(0) << "," << x.coord(1) << "," << x.coord(2) << "]: w1 = " << w1 << endl;
 		if (w2 > 1 || w2 < -1.0e-5)
-			cout << "error in position [" << x.coord(0) << "," << x.coord(1) << "," << x.coord(2) << "]: w2 = " << w2 << endl;
+			cout << "error in position [" << x.coord(0) << "," << x.coord(1) << "," << x.coord(2) << "]: w2 = " << w2 << endl;*/
 
 		w2 -= w1;
 		
@@ -189,6 +189,8 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 
 	maxvel[0] = pcls_cdm->updateVel(initialize_q_ic_basic, a/(1.5 * Hconf(a, fourpiG, cosmo)), &phi, 1) / a;
 
+	parallel.max<double>(maxvel, 1);
+
 	COUT << " maximum velocity (1st order) = " << maxvel[0] << endl;
 
 	COUT << " computing 1st order density..." << endl;
@@ -243,6 +245,8 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 	chi->updateHalo();
 
 	maxvel[0] = pcls_cdm->updateVel(initialize_q_ic_basic, a/(1.5 * Hconf(a, fourpiG, cosmo)), &chi, 1) / a;
+
+	parallel.max<double>(maxvel, 1);
 
 	COUT << " maximum velocity (2nd order) = " << maxvel[0] << endl;
 
