@@ -66,7 +66,7 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 		}
 		else
 		{
-			COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": could not write flat cosmology parameters to file " << par_string << endl;
+			COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": could not write flat cosmology parameters to file " << filename << endl;
 		}
 	}
 
