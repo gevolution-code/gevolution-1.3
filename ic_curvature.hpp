@@ -44,6 +44,32 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 	i2 = inner_radius * inner_radius;
 	dlnm = 0.5 * d1 * H2 * sim.LTB_radius * sim.LTB_radius;
 
+	if (parallel.isRoot())
+	{
+		FILE * outfile = nullptr;
+
+		sprintf(filename, "%s%s_flat_cosmology.ini", sim.output_path, sim.basename_generic);
+		outfile = fopen(filename, "w");
+
+		if (outfile != nullptr)
+		{
+			fprintf(outfile, "# Flat cosmology parameters\n");
+			fprintf(outfile, "Omega_Lambda = %.12g\n", cosmo.Omega_Lambda);
+			fprintf(outfile, "Omega_b      = %.12g\n", cosmo.Omega_b);
+			fprintf(outfile, "Omega_cdm    = %.12g\n", cosmo.Omega_cdm);
+			fprintf(outfile, "Omega_g      = %.12g\n", cosmo.Omega_g);
+			fprintf(outfile, "Omega_ur     = %.12g\n", cosmo.Omega_ur);
+			fprintf(outfile, "h            = %.12g\n", cosmo.h);
+			fprintf(outfile, "z_in         = %.12g\n", sim.z_in);
+
+			fclose(outfile);
+		}
+		else
+		{
+			COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": could not write flat cosmology parameters to file " << par_string << endl;
+		}
+	}
+
 	COUT << " computed gravitational potential at the center of the LTB model: phi(r=0) = " << -0.25 * d1 * H2 * (sim.LTB_radius * sim.LTB_radius * (1.0 - d1 / 3.)) << endl; //<< -0.5 * dlnm << endl;
 
 	dlnm *= 4. * M_PI * sim.LTB_radius * sim.LTB_radius * sim.LTB_radius / 3.;
