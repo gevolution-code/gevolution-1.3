@@ -65,9 +65,33 @@ bool kappa(float * pixel, const int64_t Nside, int64_t ipix, float & result);
 
 int loadHealpixData(metric_container * field, double min_dist, double max_dist, char * lightconeparam = NULL);
 
-float lin_int(float a, float b, float f)
+template<typename T>
+T lin_int(T a, T b, T f)
 {
 	return a + (f*(b-a));
+}
+
+double tau_of_z(double z, background_data * bg, int numlines)
+{
+	int low = 0;
+	int high = numlines - 1;
+
+	while (low < high)
+	{
+		int mid = (low + high) / 2;
+		if (bg[mid].a > 1.0 / (1.0 + z))
+			low = mid + 1;
+		else
+			high = mid;
+	}
+
+	if (low == 0)
+		return bg[0].tau;
+
+	if (low == numlines)
+		return bg[numlines - 1].tau;
+
+	return lin_int<double>(bg[low - 1].tau, bg[low].tau, (bg[low - 1].a - 1.0 / (1.0 + z)) / (bg[low - 1].a - bg[low].a));
 }
 
 
@@ -159,8 +183,6 @@ int main(int argc, char **argv)
 		cout << "  distance interval = " << sim.lightcone[i].distance[0] << ", " << sim.lightcone[i].distance[1] << endl << endl;
 	}
 	
-	double tauobs = particleHorizon(1, 1.5 * sim.boxsize * sim.boxsize / C_SPEED_OF_LIGHT / C_SPEED_OF_LIGHT, cosmo);
-	
 	FILE * background_file;
 	char * buffer;
 
@@ -211,8 +233,35 @@ int main(int argc, char **argv)
 
 	fclose(background_file);
 	
+	double tauobs;
+
+	if (lightconeparam != NULL)
+	{
+		sprintf(filename0, "%s", lightconeparam);
+
+		char * token = strtok(filename0, ",");
+
+		if (token != NULL)
+		{
+			int id = atoi(token);
+			if (id < 0 || id >= sim.num_lightcone)
+			{
+				cout << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": lightcone ID " << id << " is out of range!" << endl;
+				return -1;
+			}
+			
+			tauobs = tau_of_z(sim.lightcone[id].z, back, numlines);
+			cout << " observation time is taken from lightcone ID " << id << " with redshift " << sim.lightcone[id].z << ", which corresponds to conformal time tau = " << tauobs << " Mpc/h" << endl;
+		}
+	}
+	else
+	{
+		tauobs = tau_of_z(0, back, numlines);
+		cout << " observation time is at conformal time tau = " << tauobs << " Mpc/h" << endl;
+	}
+	
 	double maxredshift = (1./back[numlines-1].a) - 1.;
-	double maxdistance = (tauobs - back[numlines-1].tau) * sim.boxsize;;
+	double maxdistance = (tauobs - back[numlines-1].tau) * sim.boxsize;
 
 	char * token = NULL;
 
@@ -313,7 +362,7 @@ int main(int argc, char **argv)
 
 		for (int i = 0; i < numoutputs; i++)
 		{
-			distances[i] = tauobs - particleHorizon(1./(redshifts[i]+1.), 1.5 * sim.boxsize * sim.boxsize / C_SPEED_OF_LIGHT / C_SPEED_OF_LIGHT, cosmo);
+			distances[i] = tauobs - tau_of_z(redshifts[i], back, numlines);
 			
 			if(i!=0) cout << ", ";
 			cout << redshifts[i];
@@ -386,7 +435,7 @@ int main(int argc, char **argv)
 
 #pragma omp parallel for reduction(+:monopole)
 			for (int l = 0; l < it0->second.hdr.Npix; l++)
-				monopole += lin_int(it0->second.pixel[l], it1->second.pixel[l], (it0->second.hdr.distance - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)));
+				monopole += lin_int<float>(it0->second.pixel[l], it1->second.pixel[l], (it0->second.hdr.distance - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)));
 				
 			pot_obs = monopole / it0->second.hdr.Npix;
 			
@@ -481,9 +530,9 @@ int main(int argc, char **argv)
 				else
 				{
 					for (int m = outcnt; m < numoutputs; m++)
-						map_phi_final[m][l+pixoffset] -= 2.*(it0->second.hdr.distance - dist)*((distances[m]-it0->second.hdr.distance)/(distances[m]*it0->second.hdr.distance))*lin_int(it0->second.pixel[l],it1->second.pixel[l], (it0->second.hdr.distance - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)));
+						map_phi_final[m][l+pixoffset] -= 2.*(it0->second.hdr.distance - dist)*((distances[m]-it0->second.hdr.distance)/(distances[m]*it0->second.hdr.distance))*lin_int<float>(it0->second.pixel[l],it1->second.pixel[l], (it0->second.hdr.distance - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)));
 					map_isw_final[l+pixoffset] += 2.*(it0->second.hdr.distance - dist) * (it0->second.pixel[l] - it1->second.pixel[l]) / (back[step].tau - back[step+1].tau);
-					map_shapiro_final[l+pixoffset] -= 2.*sim.boxsize*(it0->second.hdr.distance - dist) * lin_int(it0->second.pixel[l],it1->second.pixel[l], (it0->second.hdr.distance - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)));
+					map_shapiro_final[l+pixoffset] -= 2.*sim.boxsize*(it0->second.hdr.distance - dist) * lin_int<float>(it0->second.pixel[l],it1->second.pixel[l], (it0->second.hdr.distance - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)));
 				}
 			}
 			
@@ -627,7 +676,7 @@ int main(int argc, char **argv)
 					cout << COLORTEXT_YELLOW << " warning" << COLORTEXT_RESET << ": evaluating potential at boundary of covered range" << endl;
 #pragma omp parallel for
 					for (long l = 0; l < Npix_final; l++)
-						map_phi_final[outcnt][l+pixoffset] = (map_isw_final[l+pixoffset] < -1.5e29) ? map_isw_final[l+pixoffset] : pot_obs - lin_int(it0->second.pixel[l],it1->second.pixel[l], (distances[outcnt] - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)));
+						map_phi_final[outcnt][l+pixoffset] = (map_isw_final[l+pixoffset] < -1.5e29) ? map_isw_final[l+pixoffset] : pot_obs - lin_int<float>(it0->second.pixel[l],it1->second.pixel[l], (distances[outcnt] - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)));
 				}
 				else if (std::prev(it0)->second.hdr.Nside != Nside_final)
 				{
@@ -636,14 +685,14 @@ int main(int argc, char **argv)
 					{
 						pix2vec_ring64(Nside_final, l, v1);
 						vec2pix_ring64(std::prev(it0)->second.hdr.Nside, v1, &q);
-						map_phi_final[outcnt][l+pixoffset] = (map_isw_final[l+pixoffset] < -1.5e29) ? map_isw_final[l+pixoffset] : pot_obs - ((it0->second.hdr.distance-distances[outcnt]) * lin_int(it0->second.pixel[l],it1->second.pixel[l], (distances[outcnt] - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau))) + (distances[outcnt]-dist) * lin_int(std::prev(it0)->second.pixel[q],std::prev(it1)->second.pixel[q], (distances[outcnt] - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)))) / (it0->second.hdr.distance - dist);
+						map_phi_final[outcnt][l+pixoffset] = (map_isw_final[l+pixoffset] < -1.5e29) ? map_isw_final[l+pixoffset] : pot_obs - ((it0->second.hdr.distance-distances[outcnt]) * lin_int<float>(it0->second.pixel[l],it1->second.pixel[l], (distances[outcnt] - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau))) + (distances[outcnt]-dist) * lin_int<float>(std::prev(it0)->second.pixel[q],std::prev(it1)->second.pixel[q], (distances[outcnt] - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)))) / (it0->second.hdr.distance - dist);
 					}
 				}
 				else
 				{
 #pragma omp parallel for
 					for (long l = 0; l < Npix_final; l++)
-						map_phi_final[outcnt][l+pixoffset] = (map_isw_final[l+pixoffset] < -1.5e29) ? map_isw_final[l+pixoffset] : pot_obs - ((it0->second.hdr.distance-distances[outcnt]) * lin_int(it0->second.pixel[l],it1->second.pixel[l], (distances[outcnt] - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau))) + (distances[outcnt]-dist) * lin_int(std::prev(it0)->second.pixel[l],std::prev(it1)->second.pixel[l], (distances[outcnt] - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)))) / (it0->second.hdr.distance - dist);
+						map_phi_final[outcnt][l+pixoffset] = (map_isw_final[l+pixoffset] < -1.5e29) ? map_isw_final[l+pixoffset] : pot_obs - ((it0->second.hdr.distance-distances[outcnt]) * lin_int<float>(it0->second.pixel[l],it1->second.pixel[l], (distances[outcnt] - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau))) + (distances[outcnt]-dist) * lin_int<float>(std::prev(it0)->second.pixel[l],std::prev(it1)->second.pixel[l], (distances[outcnt] - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)))) / (it0->second.hdr.distance - dist);
 				}
 	
 				if (numoutputs > 1)
@@ -654,7 +703,7 @@ int main(int argc, char **argv)
 	
 				#pragma omp parallel for
 				for (long l = 0; l < Npix_final; l++)
-					map_phi_final[outcnt][l+pixoffset] = (map_shapiro_final[l+pixoffset] < -1.5e29) ? map_shapiro_final[l+pixoffset] : map_shapiro_final[l+pixoffset] - 2.*sim.boxsize*(distances[outcnt]+0.5*dist-1.5*it0->second.hdr.distance) * lin_int(it0->second.pixel[l],it1->second.pixel[l], (it0->second.hdr.distance - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)));
+					map_phi_final[outcnt][l+pixoffset] = (map_shapiro_final[l+pixoffset] < -1.5e29) ? map_shapiro_final[l+pixoffset] : map_shapiro_final[l+pixoffset] - 2.*sim.boxsize*(distances[outcnt]+0.5*dist-1.5*it0->second.hdr.distance) * lin_int<float>(it0->second.pixel[l],it1->second.pixel[l], (it0->second.hdr.distance - (tauobs - back[step].tau))/((back[step].tau - back[step+1].tau)));
 					
 				if (Nside_final > Nside_initial)
 				{
