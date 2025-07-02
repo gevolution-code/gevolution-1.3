@@ -1907,31 +1907,32 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 
 		double phi0 = -0.25 * d1 * sim.LTB_radius * sim.LTB_radius * sim.boxsize * sim.boxsize / (a_flat * a_flat * C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT * flat_E2);
 
-		COUT << " estimated gravitational potential at the center of the LTB model (flat cosmology): phi(r=0) = " << phi0 * (1. - d1/3.) << endl;
+		COUT << " estimated gravitational potential at the center of the LTB model (flat cosmology): phi(r=0) = " << phi0 * (1. - 3.5 * phi0) << endl;
 
 		// account for decay of potential due to Lambda
 
 		gsl_odeiv2_system growth_sys;
 		growth_sys.function = [](double t, const double y[], double dydt[], void *cosmo) -> int
 		{
-			// y[0] = phi, y[1] = dphi/dt, y[2] = integral of phi over time, y[3] = integral of phi(2) over time, y[4] = normalisation factor
+			// y[0] = phi, y[1] = dphi/dt, y[2] = integral of phi over time, y[3] = integral of phi^2 over time, y[4] = integral of (a - 1) over time, y[5] = normalisation factor
 			double a3 = t * t * t;
 
 			dydt[0] = y[1];
 			dydt[1] = y[1] * (3.5 * ((cosmology *) cosmo)->Omega_m - 5. * (((cosmology *) cosmo)->Omega_m - 1.) * a3) / (((((cosmology *) cosmo)->Omega_m - 1.) * a3 - ((cosmology *) cosmo)->Omega_m) * t) - y[0] * 3. * (((cosmology *) cosmo)->Omega_m - 1.) * t / ((((cosmology *) cosmo)->Omega_m - 1.) * a3 - ((cosmology *) cosmo)->Omega_m);
 			dydt[2] = y[0] / sqrt(((cosmology *) cosmo)->Omega_m / t + (1. - ((cosmology *) cosmo)->Omega_m) * t * t);
-			dydt[3] = (29. - 50. * t) / 63. / sqrt(((cosmology *) cosmo)->Omega_m / t + (1. - ((cosmology *) cosmo)->Omega_m) * t * t);
-			dydt[4] = 1. / sqrt(((cosmology *) cosmo)->Omega_m / t + (1. - ((cosmology *) cosmo)->Omega_m) * t * t);
+			dydt[3] = y[0] * y[0] / sqrt(((cosmology *) cosmo)->Omega_m / t + (1. - ((cosmology *) cosmo)->Omega_m) * t * t);
+			dydt[4] = (t - 1.) / sqrt(((cosmology *) cosmo)->Omega_m / t + (1. - ((cosmology *) cosmo)->Omega_m) * t * t);
+			dydt[5] = 1. / sqrt(((cosmology *) cosmo)->Omega_m / t + (1. - ((cosmology *) cosmo)->Omega_m) * t * t);
 			return GSL_SUCCESS;
 		};
 		growth_sys.jacobian = nullptr;
-		growth_sys.dimension = 5;
+		growth_sys.dimension = 6;
 		growth_sys.params = (void *) &cosmo;
 
 		gsl_odeiv2_driver *growth_driver = gsl_odeiv2_driver_alloc_y_new(&growth_sys, gsl_odeiv2_step_rkf45, 1e-6, 1e-6, 0.0);
 
 		t = (cosmo.Omega_m - 1.) / cosmo.Omega_m;
-		double y[5] = {gsl_sf_hyperg_2F1(1./3., 1., 11./6., t), gsl_sf_hyperg_2F1(4./3., 2., 17./6., t) * t * a_flat * 6. / 11., 0., 0., 0.};
+		double y[6] = {gsl_sf_hyperg_2F1(1./3., 1., 11./6., t), gsl_sf_hyperg_2F1(4./3., 2., 17./6., t) * t * 6. / 11., 0., 0., 0., 0.};
 		t = 1.;
 
 		COUT << " computing growth factor for phi potential - initial conditions: phi = " << y[0] << ", dphi/da = " << y[1] << endl;
@@ -1939,14 +1940,14 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		gsl_odeiv2_driver_apply(growth_driver, &t, a_flat, y);
 		gsl_odeiv2_driver_free(growth_driver);
 
-		COUT << " computing growth factor for phi potential - final conditions: phi = " << y[0] << ", dphi/da = " << y[1] << ", weighted contribution from phi0 = " << y[2] / y[4] << ", weighted contribution from second order = " << d1 * y[3] / y[4] << endl;
+		COUT << " computing growth factor for phi potential - final conditions: phi = " << y[0] << ", dphi/da = " << y[1] << ", weighted contribution from phi0 = " << y[2] / y[5] << ", weighted contribution from phi0^2 = " << y[3] / y[5] << ", weighted contribution from second order = " << d1 * y[4] / y[5] << endl;
 
 		flat_driver = gsl_odeiv2_driver_alloc_y_new(&flat_sys, gsl_odeiv2_step_rkf45, 1e-6, 1e-6, 0.0);
 
 		a_flat = 1.;
 		t = 0.;
 
-		gsl_odeiv2_driver_apply(flat_driver, &t, lookback_time * (1. - phi0 * ((y[2] + d1 * y[3]) / y[4] + 16. * phi0 / 3.)), &a_flat);
+		gsl_odeiv2_driver_apply(flat_driver, &t, lookback_time * (1. - phi0 * ((y[2] - 0.5 * phi0 * y[3] + d1 * y[4] / 2.1) / y[5] - 3.5 * phi0)), &a_flat);
 
 		gsl_odeiv2_driver_free(flat_driver);
 
@@ -1962,7 +1963,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		a_flat = 1.;
 		t = 0.;
 
-		gsl_odeiv2_driver_apply(flat_driver, &t, lookback_time * (1. - phi0 * ((y[2] + d1 * y[3]) / y[4] + 16. * phi0 / 3.)), &a_flat);
+		gsl_odeiv2_driver_apply(flat_driver, &t, lookback_time * (1. - phi0 * ((y[2] - 0.5 * phi0 * y[3] + d1 * y[4] / 2.1) / y[5] - 3.5 * phi0)), &a_flat);
 
 		gsl_odeiv2_driver_free(flat_driver);
 
