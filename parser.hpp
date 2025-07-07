@@ -1956,8 +1956,21 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		flat_E2 = cosmo.Omega_m / pow(a_flat, 3) + cosmo.Omega_rad / pow(a_flat, 4) + cosmo.Omega_Lambda;
 		phi0 = -0.25 * d1 * sim.LTB_radius * sim.LTB_radius * sim.boxsize * sim.boxsize / (a_flat * a_flat * C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT * flat_E2);
 
-		COUT << " revised gravitational potential at the center of the LTB model (flat cosmology): phi(r=0) = " << phi0 * (1. - d1/3.) << endl;
+		COUT << " revised gravitational potential at the center of the LTB model (flat cosmology): phi(r=0) = " << phi0 * (1. - 3.5 * phi0) << endl;
 
+		// compute redshift for peripheral observers
+		flat_driver = gsl_odeiv2_driver_alloc_y_new(&flat_sys, gsl_odeiv2_step_rkf45, 1e-6, 1e-6, 0.0);
+
+		a_flat = 1.;
+		t = 0.;
+
+		gsl_odeiv2_driver_apply(flat_driver, &t, lookback_time * (1. + phi0 * d1 * (y[4] / y[5] - 2.) / 9.), &a_flat);
+
+		gsl_odeiv2_driver_free(flat_driver);
+
+		COUT << " expansion factor for peripheral observers to reach z=0 (flat space) = " << a_flat << endl;
+
+		// compute redshift for central observer
 		flat_driver = gsl_odeiv2_driver_alloc_y_new(&flat_sys, gsl_odeiv2_step_rkf45, 1e-6, 1e-6, 0.0);
 
 		a_flat = 1.;
