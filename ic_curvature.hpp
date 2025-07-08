@@ -43,6 +43,10 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 	inner_radius = sim.LTB_radius / pow(1. + d1, 1./3.);
 	i2 = inner_radius * inner_radius;
 	dlnm = 0.5 * d1 * H2 * sim.LTB_radius * sim.LTB_radius;
+	COUT << " mass correction: dm/m = " << dlnm << " (first order), dm/m = ";
+	// second-order correction
+	dlnm += dlnm * ((113 * dlnm - 73 * d1) / 70.) - d1 * d1 / 1.5;
+	COUT << dlnm << " (second order)" << endl;
 
 	if (parallel.isRoot())
 	{
