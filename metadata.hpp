@@ -283,6 +283,7 @@ struct icsettings
 	double n_s;
 	double k_pivot;
 	double LTB_Omega_k;
+	double LTB_h_rescale;
 };
 
 struct cosmology

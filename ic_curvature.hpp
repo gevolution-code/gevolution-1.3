@@ -306,6 +306,241 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 	pcls_cdm->moveParticles(displace_pcls_ic_basic, 1./sim.numpts/sim.numpts/sim.numpts, &chi, 1, NULL, &max_displacement, &reduce, 1);
 
     COUT << " " << sim.numpcl[0] << " cdm particles initialized: maximum displacement (3rd order) = " << max_displacement * sim.numpts << " lattice units." << endl;
+
+	if (ic.tkfile[0] != '\0')
+	{
+		gsl_spline * pkspline = NULL;
+		gsl_spline * dgaugespline = NULL;
+		gsl_spline * vgaugespline = NULL;
+		gsl_spline * tk_d1 = NULL;
+		gsl_spline * tk_d2 = NULL;
+		gsl_spline * tk_t1 = NULL;
+		gsl_spline * tk_t2 = NULL;
+		double * temp1 = NULL;
+		double * temp2 = NULL;
+
+		loadTransferFunctions(ic.tkfile, tk_d1, tk_t1, NULL, sim.boxsize, cosmo.h);
+		
+		if (tk_d1 == NULL || tk_t1 == NULL)
+		{
+			COUT << " error: total transfer function was empty!" << endl;
+			parallel.abortForce();
+		}
+		
+		temp1 = (double *) malloc(tk_d1->size * sizeof(double));
+		temp2 = (double *) malloc(tk_d1->size * sizeof(double));
+		
+		for (int i = 0; i < tk_d1->size; i++) // construct phi
+		{
+			temp1[i] = tk_d1->x[i] * ic.LTB_h_rescale;
+			temp2[i] = -M_PI * tk_d1->y[i] * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / tk_d1->x[i] / ic.LTB_h_rescale) * tk_d1->x[i] * ic.LTB_h_rescale;
+		}
+
+		pkspline = gsl_spline_alloc(gsl_interp_cspline, tk_d1->size);
+		gsl_spline_init(pkspline, temp1, temp2, tk_d1->size);
+
+		loadTransferFunctions(ic.tkfile, tk_d2, tk_t2, "eta", sim.boxsize, cosmo.h);
+				
+		if (tk_d2 == NULL || tk_t2 == NULL)
+		{
+			COUT << " error: transfer functions were empty!" << endl;
+			parallel.abortForce();
+		}
+
+		if (sim.gr_flag == 0)
+		{
+			double rescale = (Hconf(a, fourpiG, cosmo) - 100. * (Hconf(1.005 * a, fourpiG, cosmo) - Hconf(0.995 * a, fourpiG, cosmo))); // FIXME	
+			for (int i = 0; i < tk_t2->size; i++) // construct gauge correction for N-body gauge (3 Hconf theta_tot / k^2 = 3 Hconf eta' / (Hconf^2 - Hconf'))
+				temp2[i] = 3. * tk_t2->y[i] / rescale;
+		}
+		else
+		{
+			for (int i = 0; i < tk_t2->size; i++) // construct gauge correction for Poisson gauge (3 phi - 3 eta)
+				temp2[i] = 3. * tk_d1->y[i] - 3. * tk_d2->y[i];
+		}
+
+		dgaugespline = gsl_spline_alloc(gsl_interp_cspline, tk_t2->size);
+		gsl_spline_init(dgaugespline, temp1, temp2, tk_t2->size);
+
+		gsl_spline_free(tk_d1);
+		gsl_spline_free(tk_t1);
+
+		if (sim.gr_flag > 0)
+		{
+			for (int i = 0; i < tk_t2->size; i++)
+				temp2[i] = 3. * tk_t2->y[i];
+		}
+		else
+		{
+			COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": gauge correction for N-body gauge velocities cannot be computed accurately from the transfer functions at a single redshift!" << endl;
+
+			for (int i = 0; i < tk_t2->size; i++)
+				temp2[i] = 0.;
+		}
+
+		loadTransferFunctions(ic.tkfile, tk_d1, tk_t1, "h", sim.boxsize, cosmo.h);
+			
+		if (tk_d1 == NULL || tk_t1 == NULL)
+		{
+			COUT << " error: transfer functions were empty!" << endl;
+			parallel.abortForce();
+		}
+
+		for (int i = 0; i < tk_t1->size; i++)
+			temp2[i] += tk_t1->y[i] * 0.5;
+
+		gsl_spline_free(tk_d1);
+		gsl_spline_free(tk_t1);
+
+		vgaugespline = gsl_spline_alloc(gsl_interp_cspline, tk_t2->size);
+		gsl_spline_init(vgaugespline, temp1, temp2, tk_t2->size);
+
+		gsl_spline_free(tk_d2);
+		gsl_spline_free(tk_t2);
+
+		loadTransferFunctions(ic.tkfile, tk_d1, tk_t1, "d_m", sim.boxsize, cosmo.h);	// get transfer functions for matter
+		
+		if (tk_d1 == NULL || tk_t1 == NULL)
+		{
+			COUT << " error: matter transfer function was empty!" << endl;
+			parallel.abortForce();
+		}
+
+		if (sim.baryon_flag == 2)	// baryon treatment = blend; compute displacement & velocity from weighted average
+		{
+			loadTransferFunctions(ic.tkfile, tk_d2, tk_t2, "b", sim.boxsize, cosmo.h);	// get transfer functions for baryons
+		
+			if (tk_d2 == NULL || tk_t2 == NULL)
+			{
+				COUT << " error: baryon transfer function was empty!" << endl;
+				parallel.abortForce();
+			}
+			if (tk_d2->size != tk_d1->size)
+			{
+				COUT << " error: baryon transfer function line number mismatch!" << endl;
+				parallel.abortForce();
+			}
+
+			for (int i = 0; i < tk_d1->size; i++)
+			{
+					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - ((cosmo.Omega_cdm * tk_d1->y[i] + cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(dgaugespline->x[i] * cosmo.h / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
+					temp2[i] = -a * ((cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + vgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(dgaugespline->x[i] * cosmo.h / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
+			}
+
+			gsl_spline_free(tk_d1);
+			gsl_spline_free(tk_t1);
+			tk_d1 = gsl_spline_alloc(gsl_interp_cspline, tk_d2->size);
+			tk_t1 = gsl_spline_alloc(gsl_interp_cspline, tk_d2->size);
+			gsl_spline_init(tk_d1, dgaugespline->x, temp1, tk_d2->size);
+			gsl_spline_init(tk_t1, dgaugespline->x, temp2, tk_d2->size);
+			gsl_spline_free(tk_d2);
+			gsl_spline_free(tk_t2);
+		}
+		else
+		{
+			for (int i = 0; i < tk_d1->size; i++)
+			{
+					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - (tk_d1->y[i] + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(dgaugespline->x[i] * cosmo.h / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
+					temp2[i] = -a * vgaugespline->y[i] * M_PI * sqrt(Pk_primordial(dgaugespline->x[i] * cosmo.h / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
+			}
+
+			gsl_spline_free(tk_d1);
+			gsl_spline_free(tk_t1);
+			tk_d1 = gsl_spline_alloc(gsl_interp_cspline, pkspline->size);
+			tk_t1 = gsl_spline_alloc(gsl_interp_cspline, pkspline->size);
+			gsl_spline_init(tk_d1, pkspline->x, temp1, pkspline->size);
+			gsl_spline_init(tk_t1, pkspline->x, temp2, pkspline->size);
+		}
+
+		free(temp1);
+		free(temp2);
+
+		for (kFT.first(); kFT.test(); kFT.next()) // get the CIC kernel
+			(*scalarFT)(kFT) = (*BiFT)(kFT, 0);
+
+		generateDisplacementField(*scalarFT, 0., tk_d1, (unsigned int) ic.seed, ic.flags & ICFLAG_KSPHERE);
+		gsl_spline_free(tk_d1);
+		plan_chi->execute(FFT_BACKWARD);
+
+		// apodize
+		for (x.first(); x.test(); x.next())
+		{
+			r2 = 0.;
+			for (int i = 0; i < 3; i++)
+				r2 += (x.coord(i) - sim.numpts / 2) * (x.coord(i) - sim.numpts / 2);
+
+			r2 /= sim.numpts * sim.numpts;
+
+			if (r2 > i2)
+			{
+				(*chi)(x) = Real(0);
+			}
+			else if ((r2 = sqrt(r2) / inner_radius) > 0.9)
+			{
+				(*chi)(x) *= 0.5 + 0.5 * cos(10. * M_PI * (r2 - 0.9));
+			}
+		}
+
+		chi->updateHalo();	// chi now contains the CDM displacement
+
+		pcls_cdm->moveParticles(displace_pcls_ic_basic, 1., &chi, 1, NULL, &max_displacement, &reduce, 1);	// displace CDM particles
+
+		for (kFT.first(); kFT.test(); kFT.next()) // get the CIC kernel
+			(*scalarFT)(kFT) = (*BiFT)(kFT, 0);
+
+		generateDisplacementField(*scalarFT, 0., tk_t1, (unsigned int) ic.seed, ic.flags & ICFLAG_KSPHERE, 0);
+		gsl_spline_free(tk_t1);
+		plan_chi->execute(FFT_BACKWARD);
+		
+		for (kFT.first(); kFT.test(); kFT.next()) // get the CIC kernel
+			(*scalarFT)(kFT) = (*BiFT)(kFT, 0);
+
+		generateDisplacementField(*scalarFT, 0., pkspline, (unsigned int) ic.seed, ic.flags & ICFLAG_KSPHERE, 0);
+		plan_source->execute(FFT_BACKWARD);
+
+		// apodize
+		for (x.first(); x.test(); x.next())
+		{
+			r2 = 0.;
+			for (int i = 0; i < 3; i++)
+				r2 += (x.coord(i) - sim.numpts / 2) * (x.coord(i) - sim.numpts / 2);
+
+			r2 /= sim.numpts * sim.numpts;
+
+			if (r2 > i2)
+			{
+				(*chi)(x) = Real(0);
+			}
+			else if ((r2 = sqrt(r2) / inner_radius) > 0.9)
+			{
+				(*chi)(x) *= 0.5 + 0.5 * cos(10. * M_PI * (r2 - 0.9));
+				(*phi)(x) += (0.5 + 0.5 * cos(10. * M_PI * (r2 - 0.9))) * (*source)(x);
+			}
+			else
+			{
+				(*phi)(x) += (*source)(x);
+			}
+		}
+
+		chi->updateHalo();	// chi now contains the CDM velocity potential
+		phi->updateHalo();	// phi has been updated with the matter perturbations
+
+		sprintf(filename, "%s%s_IC_phi_pert.h5", sim.output_path, sim.basename_generic);
+		phi->saveHDF5(string(filename));
+
+		r2 = 1.;
+		maxvel[0] = pcls_cdm->updateVel(update_q_Newton, 1, &chi, 1, &r2) / a;
+
+		parallel.max<double>(maxvel, 1);
+
+		COUT << " adding matter perturbations: maximum displacement = " << max_displacement * sim.numpts << " lattice units; maximum velocity = " << maxvel[0] << endl;
+
+		gsl_spline_free(pkspline);
+		if (dgaugespline != NULL)
+			gsl_spline_free(dgaugespline);
+		if (vgaugespline != NULL)
+			gsl_spline_free(vgaugespline);
+	}
 	
 	/*if (sim.baryon_flag == 1)
 	{

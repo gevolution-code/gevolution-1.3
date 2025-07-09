@@ -790,6 +790,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 	ic.restart_dtau = 0.;
 	ic.restart_version = -1.;
 	ic.LTB_Omega_k = 0.;
+	ic.LTB_h_rescale = 1.0;
 	
 	parseParameter(params, numparam, "seed", ic.seed);
 	
@@ -1841,6 +1842,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		}
 
 		cosmo.Omega_Lambda = 1. - cosmo.Omega_m - cosmo.Omega_rad - ic.LTB_Omega_k;
+		ic.LTB_h_rescale = cosmo.h;
 
 		COUT << " Running a " << COLORTEXT_CYAN << "curved" << COLORTEXT_RESET << " universe simulation using the LTB model" << endl;
 
@@ -2024,6 +2026,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		}
 
 		cosmo.h *= sqrt(flat_E2);
+		ic.LTB_h_rescale /= cosmo.h;
 	}
 	
 	if (cosmo.Omega_m <= 0. || cosmo.Omega_m > 1.)
