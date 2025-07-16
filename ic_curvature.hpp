@@ -332,8 +332,8 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 		
 		for (int i = 0; i < tk_d1->size; i++) // construct phi
 		{
-			temp1[i] = tk_d1->x[i] * ic.LTB_h_rescale;
-			temp2[i] = -M_PI * tk_d1->y[i] * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / tk_d1->x[i] / ic.LTB_h_rescale) * tk_d1->x[i] * ic.LTB_h_rescale;
+			temp1[i] = tk_d1->x[i] * ic.LTB_h_rescale * (ic.z_ic + 1.) / (sim.z_in + 1.);
+			temp2[i] = -M_PI * tk_d1->y[i] * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / temp1[i]) * temp1[i];
 		}
 
 		pkspline = gsl_spline_alloc(gsl_interp_cspline, tk_d1->size);
@@ -423,8 +423,8 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 
 			for (int i = 0; i < tk_d1->size; i++)
 			{
-					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - ((cosmo.Omega_cdm * tk_d1->y[i] + cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(dgaugespline->x[i] * cosmo.h / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
-					temp2[i] = -a * ((cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + vgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(dgaugespline->x[i] * cosmo.h / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
+					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - ((cosmo.Omega_cdm * tk_d1->y[i] + cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
+					temp2[i] = -a * ((cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + vgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
 			}
 
 			gsl_spline_free(tk_d1);
@@ -440,8 +440,8 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 		{
 			for (int i = 0; i < tk_d1->size; i++)
 			{
-					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - (tk_d1->y[i] + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(dgaugespline->x[i] * cosmo.h / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
-					temp2[i] = -a * vgaugespline->y[i] * M_PI * sqrt(Pk_primordial(dgaugespline->x[i] * cosmo.h / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
+					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - (tk_d1->y[i] + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
+					temp2[i] = -a * vgaugespline->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
 			}
 
 			gsl_spline_free(tk_d1);
