@@ -1876,6 +1876,10 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		cosmo.Omega_rad = LTB_Omega_rad * LTB_h * LTB_h / (cosmo.h * cosmo.h);
 
 		COUT << " initial flat-space cosmological parameters are: Omega_m* = " << cosmo.Omega_m << ", Omega_rad* = " << cosmo.Omega_rad << ", Omega_Lambda* = " << cosmo.Omega_Lambda << ", h = " << cosmo.h << endl;
+
+		double tH_in = LookbackTime(1e6, cosmo);
+
+		COUT << " initial Hubble time (flat space) = " << tH_in * C_SPEED_OF_LIGHT << " Mpc" << endl;
 		
 		// compute expansion factor in flat cosmology
 
@@ -1949,7 +1953,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		a_flat = 1.;
 		t = 0.;
 
-		gsl_odeiv2_driver_apply(flat_driver, &t, lookback_time * (1. - phi0 * ((y[2] - 0.5 * phi0 * y[3] + d1 * y[4] / 2.1) / y[5] - 3.5 * phi0)), &a_flat);
+		gsl_odeiv2_driver_apply(flat_driver, &t, (lookback_time - tH_in * phi0) * (1. - phi0 * ((y[2] - 0.5 * phi0 * y[3] + d1 * y[4] / 2.1) / y[5] - 3.5 * phi0)), &a_flat);
 
 		gsl_odeiv2_driver_free(flat_driver);
 
@@ -1978,7 +1982,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		a_flat = 1.;
 		t = 0.;
 
-		gsl_odeiv2_driver_apply(flat_driver, &t, lookback_time * (1. - phi0 * ((y[2] - 0.5 * phi0 * y[3] + d1 * y[4] / 2.1) / y[5] - 3.5 * phi0)), &a_flat);
+		gsl_odeiv2_driver_apply(flat_driver, &t, (lookback_time - tH_in * phi0) * (1. - phi0 * ((y[2] - 0.5 * phi0 * y[3] + d1 * y[4] / 2.1) / y[5] - 3.5 * phi0)), &a_flat);
 
 		gsl_odeiv2_driver_free(flat_driver);
 
