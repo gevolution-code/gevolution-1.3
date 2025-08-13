@@ -333,7 +333,7 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 		for (int i = 0; i < tk_d1->size; i++) // construct phi
 		{
 			temp1[i] = tk_d1->x[i] * ic.LTB_h_rescale * (ic.z_ic + 1.) / (sim.z_in + 1.);
-			temp2[i] = -M_PI * tk_d1->y[i] * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / temp1[i]) * temp1[i];
+			temp2[i] = -M_PI * tk_d1->y[i] * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / tk_d1->x[i]) * tk_d1->x[i];
 		}
 
 		pkspline = gsl_spline_alloc(gsl_interp_cspline, tk_d1->size);
@@ -423,8 +423,8 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 
 			for (int i = 0; i < tk_d1->size; i++)
 			{
-					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - ((cosmo.Omega_cdm * tk_d1->y[i] + cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
-					temp2[i] = -a * ((cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + vgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
+					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / tk_d1->x[i] / tk_d1->x[i] : 0.) - ((cosmo.Omega_cdm * tk_d1->y[i] + cosmo.Omega_b * tk_d2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+					temp2[i] = -a * ((cosmo.Omega_b * tk_t2->y[i]) / (cosmo.Omega_cdm + cosmo.Omega_b) + vgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
 			}
 
 			gsl_spline_free(tk_d1);
@@ -440,8 +440,8 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 		{
 			for (int i = 0; i < tk_d1->size; i++)
 			{
-					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / pkspline->x[i] / pkspline->x[i] : 0.) - (tk_d1->y[i] + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
-					temp2[i] = -a * vgaugespline->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / dgaugespline->x[i]) / dgaugespline->x[i];
+					temp1[i] = (sim.gr_flag > 0 ? -3. * pkspline->y[i] / tk_d1->x[i] / tk_d1->x[i] : 0.) - (tk_d1->y[i] + dgaugespline->y[i]) * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
+					temp2[i] = -a * vgaugespline->y[i] * M_PI * sqrt(Pk_primordial(tk_d1->x[i] * cosmo.h * ic.LTB_h_rescale / sim.boxsize, ic) / tk_d1->x[i]) / tk_d1->x[i];
 			}
 
 			gsl_spline_free(tk_d1);
@@ -483,7 +483,7 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 
 		chi->updateHalo();	// chi now contains the CDM displacement
 
-		pcls_cdm->moveParticles(displace_pcls_ic_basic, 1., &chi, 1, NULL, &max_displacement, &reduce, 1);	// displace CDM particles
+		pcls_cdm->moveParticles(displace_pcls_ic_basic, pow((sim.z_in + 1.) / (ic.z_ic + 1.) / ic.LTB_h_rescale, 5), &chi, 1, NULL, &max_displacement, &reduce, 1);	// displace CDM particles
 
 		for (kFT.first(); kFT.test(); kFT.next()) // get the CIC kernel
 			(*scalarFT)(kFT) = (*BiFT)(kFT, 0);
@@ -514,11 +514,11 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 			else if ((r2 = sqrt(r2) / inner_radius) > 0.9)
 			{
 				(*chi)(x) *= 0.5 + 0.5 * cos(10. * M_PI * (r2 - 0.9));
-				(*phi)(x) += (0.5 + 0.5 * cos(10. * M_PI * (r2 - 0.9))) * (*source)(x);
+				(*phi)(x) += (0.5 + 0.5 * cos(10. * M_PI * (r2 - 0.9))) * (*source)(x) * pow((sim.z_in + 1.) / (ic.z_ic + 1.) / ic.LTB_h_rescale, 3);
 			}
 			else
 			{
-				(*phi)(x) += (*source)(x);
+				(*phi)(x) += (*source)(x) * pow((sim.z_in + 1.) / (ic.z_ic + 1.) / ic.LTB_h_rescale, 3);
 			}
 		}
 
@@ -529,7 +529,7 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 		phi->saveHDF5(string(filename));
 
 		r2 = 1.;
-		maxvel[0] = pcls_cdm->updateVel(update_q_Newton, 1, &chi, 1, &r2) / a;
+		maxvel[0] = pcls_cdm->updateVel(update_q_Newton, pow((sim.z_in + 1.) / (ic.z_ic + 1.) / ic.LTB_h_rescale, 5), &chi, 1, &r2) / a;
 
 		parallel.max<double>(maxvel, 1);
 
