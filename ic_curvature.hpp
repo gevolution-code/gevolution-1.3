@@ -483,7 +483,7 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 
 		chi->updateHalo();	// chi now contains the CDM displacement
 
-		pcls_cdm->moveParticles(displace_pcls_ic_basic, pow((sim.z_in + 1.) / (ic.z_ic + 1.) / ic.LTB_h_rescale, 5), &chi, 1, NULL, &max_displacement, &reduce, 1);	// displace CDM particles
+		pcls_cdm->moveParticles(displace_pcls_ic_basic, 1.0 /*pow((sim.z_in + 1.) / (ic.z_ic + 1.) / ic.LTB_h_rescale, 5)*/, &chi, 1, NULL, &max_displacement, &reduce, 1);	// displace CDM particles
 
 		for (kFT.first(); kFT.test(); kFT.next()) // get the CIC kernel
 			(*scalarFT)(kFT) = (*BiFT)(kFT, 0);
@@ -514,7 +514,7 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 			else if ((r2 = sqrt(r2) / inner_radius) > 0.9)
 			{
 				(*chi)(x) *= 0.5 + 0.5 * cos(10. * M_PI * (r2 - 0.9));
-				(*phi)(x) += (0.5 + 0.5 * cos(10. * M_PI * (r2 - 0.9))) * (*source)(x) * pow((sim.z_in + 1.) / (ic.z_ic + 1.) / ic.LTB_h_rescale, 3);
+				(*phi)(x) += (0.5 + 0.5 * cos(10. * M_PI * (r2 - 0.9))) * (*source)(x) / pow((sim.z_in + 1.) / (ic.z_ic + 1.) / ic.LTB_h_rescale, 2);
 			}
 			else
 			{
@@ -529,7 +529,7 @@ void generateIC_curvature(metadata & sim, icsettings & ic, cosmology & cosmo, co
 		phi->saveHDF5(string(filename));
 
 		r2 = 1.;
-		maxvel[0] = pcls_cdm->updateVel(update_q_Newton, pow((sim.z_in + 1.) / (ic.z_ic + 1.) / ic.LTB_h_rescale, 5), &chi, 1, &r2) / a;
+		maxvel[0] = pcls_cdm->updateVel(update_q_Newton, 1.0 /*pow((sim.z_in + 1.) / (ic.z_ic + 1.) / ic.LTB_h_rescale, 5)*/, &chi, 1, &r2) / a;
 
 		parallel.max<double>(maxvel, 1);
 
