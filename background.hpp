@@ -1,12 +1,12 @@
 //////////////////////////
 // background.hpp
 //////////////////////////
-// 
+//
 // code components related to background evolution
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: August 2024
+// Last modified: November 2024
 //
 //////////////////////////
 
@@ -14,6 +14,38 @@
 #define BACKGROUND_HEADER
 
 #include <gsl/gsl_integration.h>
+
+
+//////////////////////////
+// LookbackTime
+//////////////////////////
+// Description:
+//   computes the lookback time at given redshift
+//
+// Arguments:
+//   z          redshift
+//   cosmo      structure containing the cosmological parameters
+//
+// Returns: lookback time
+//
+//////////////////////////
+
+double LookbackTime(const double z, cosmology cosmo)
+{
+	double result;
+	gsl_function f;
+	double err;
+	size_t n;
+
+	f.function = [](double ln1plusz, void * params) -> double {
+		return 1.0 / sqrt(((cosmology *)params)->Omega_rad * exp(4*ln1plusz) + ((cosmology *)params)->Omega_m * exp(3*ln1plusz) + (1.0 - ((cosmology *)params)->Omega_Lambda - ((cosmology *)params)->Omega_m - ((cosmology *)params)->Omega_rad) * exp(2*ln1plusz) + ((cosmology *)params)->Omega_Lambda);
+	};
+	f.params = (void *) &cosmo;
+
+	gsl_integration_qng(&f, 0.0l, log(1+z), 5.0e-7, 1.0e-7, &result, &err, &n);
+
+	return result / cosmo.h;
+}
 
 
 double FermiDiracIntegrand(double q, void * w)
@@ -31,12 +63,12 @@ double FermiDiracPressureIntegrand(double q, void * w)
 //////////////////////////
 // Description:
 //   computes the integral of the relativistic Fermi-Dirac distribution
-// 
+//
 // Arguments:
 //   w          parameter in the F-D distribution, "(m a / kB T)^2"
 //
 // Returns: value for the integral
-// 
+//
 //////////////////////////
 
 double FermiDiracIntegral(double &w)
@@ -45,12 +77,12 @@ double FermiDiracIntegral(double &w)
 	gsl_function f;
 	double err;
 	size_t n;
-	
+
 	f.function = &FermiDiracIntegrand;
 	f.params = &w;
-		
+
 	gsl_integration_qng(&f, 0.0l, 24.0l, 5.0e-7, 1.0e-7, &result, &err, &n);
-	
+
 	return result;
 }
 
@@ -60,12 +92,12 @@ double FermiDiracIntegral(double &w)
 //////////////////////////
 // Description:
 //   computes the pressure integral of the relativistic Fermi-Dirac distribution
-// 
+//
 // Arguments:
 //   w          parameter in the F-D distribution, "(m a / kB T)^2"
 //
 // Returns: value for the integral
-// 
+//
 //////////////////////////
 
 double FermiDiracPressureIntegral(double &w)
@@ -74,12 +106,12 @@ double FermiDiracPressureIntegral(double &w)
 	gsl_function f;
 	double err;
 	size_t n;
-	
+
 	f.function = &FermiDiracPressureIntegrand;
 	f.params = &w;
-		
+
 	gsl_integration_qng(&f, 0.0l, 24.0l, 5.0e-7, 1.0e-7, &result, &err, &n);
-	
+
 	return result;
 }
 
@@ -90,14 +122,14 @@ double FermiDiracPressureIntegral(double &w)
 // Description:
 //   computes the background model for one ncdm species by integrating the relativistic
 //   Fermi-Dirac distribution
-// 
+//
 // Arguments:
 //   a          scale factor at which to compute the background model
 //   cosmo      structure containing the cosmological parameters
 //   p          index of the ncdm species
 //
 // Returns: value for the background model
-// 
+//
 //////////////////////////
 
 double bg_ncdm(const double a, const cosmology cosmo, const int p)
@@ -108,7 +140,7 @@ double bg_ncdm(const double a, const cosmology cosmo, const int p)
 	{
 		double w = a * cosmo.m_ncdm[p] / (pow(cosmo.Omega_g * cosmo.h * cosmo.h / C_PLANCK_LAW, 0.25) * cosmo.T_ncdm[p] * C_BOLTZMANN_CST);
 		w *= w;
-		
+
 		return FermiDiracIntegral(w) * cosmo.Omega_ncdm[p] * pow(cosmo.Omega_g * cosmo.h * cosmo.h / C_PLANCK_LAW, 0.25) * cosmo.T_ncdm[p] * C_BOLTZMANN_CST / cosmo.m_ncdm[p] / C_FD_NORM / a;
 	}
 }
@@ -120,7 +152,7 @@ double bg_ncdm(const double a, const cosmology cosmo, const int p)
 // Description:
 //   computes the background model for all ncdm species by integrating the relativistic
 //   Fermi-Dirac distribution
-// 
+//
 // Arguments:
 //   a          scale factor at which to compute the background model
 //   cosmo      structure containing the cosmological parameters
@@ -131,23 +163,23 @@ double bg_ncdm(const double a, const cosmology cosmo, const int p)
 //   being carried out. This assumes that the cosmological model should not change!
 //
 // Returns: value for the background model
-// 
+//
 //////////////////////////
 
 double bg_ncdm(const double a, const cosmology cosmo)
 {
 	static double result = -1.0;
 	static double a_prev = -1.0;
-	
+
 	if (a != a_prev)
 	{
 		result = 0.0;
 		a_prev = a;
-		
+
 		for (int p = 0; p < cosmo.num_ncdm; p++)
 			result += bg_ncdm(a, cosmo, p);
 	}
-	
+
 	return result;
 }
 
@@ -158,14 +190,14 @@ double bg_ncdm(const double a, const cosmology cosmo)
 // Description:
 //   computes the background pressure for one ncdm species by integrating the relativistic
 //   Fermi-Dirac distribution
-// 
+//
 // Arguments:
 //   a          scale factor at which to compute the background model
 //   cosmo      structure containing the cosmological parameters
 //   p          index of the ncdm species
 //
 // Returns: value for the background pressure
-// 
+//
 //////////////////////////
 
 double pressure_ncdm(const double a, const cosmology cosmo, const int p)
@@ -176,7 +208,7 @@ double pressure_ncdm(const double a, const cosmology cosmo, const int p)
 	{
 		double w = a * cosmo.m_ncdm[p] / (pow(cosmo.Omega_g * cosmo.h * cosmo.h / C_PLANCK_LAW, 0.25) * cosmo.T_ncdm[p] * C_BOLTZMANN_CST);
 		w *= w;
-		
+
 		return FermiDiracPressureIntegral(w) * cosmo.Omega_ncdm[p] * pow(cosmo.Omega_g * cosmo.h * cosmo.h / C_PLANCK_LAW, 0.25) * cosmo.T_ncdm[p] * C_BOLTZMANN_CST / cosmo.m_ncdm[p] / C_FD_NORM / a / 3.;
 	}
 }
@@ -187,14 +219,14 @@ double pressure_ncdm(const double a, const cosmology cosmo, const int p)
 //////////////////////////
 // Description:
 //   computes the conformal Hubble rate at given scale factor
-// 
+//
 // Arguments:
 //   a          scale factor
 //   fourpiG    "4 pi G"
 //   cosmo      structure containing the cosmological parameters
 //
 // Returns: conformal Hubble rate
-// 
+//
 //////////////////////////
 
 double Hconf(const double a, const double fourpiG, const cosmology cosmo)
@@ -221,7 +253,7 @@ double Omega_Lambda(const double a, const cosmology cosmo) { return cosmo.Omega_
 // Description:
 //   integrates the Friedmann equation for the background model using a fourth-order
 //   Runge-Kutta method
-// 
+//
 // Arguments:
 //   a          scale factor (will be advanced by dtau)
 //   fourpiG    "4 pi G"
@@ -229,14 +261,14 @@ double Omega_Lambda(const double a, const cosmology cosmo) { return cosmo.Omega_
 //   dtau       time step by which the scale factor should be advanced
 //
 // Returns:
-// 
+//
 //////////////////////////
 
 void rungekutta4bg(double &a, const double fourpiG, const cosmology cosmo, const double dtau)
 {
 	double k1a, k2a, k3a, k4a;
 
-	k1a = a * Hconf(a, fourpiG, cosmo); 
+	k1a = a * Hconf(a, fourpiG, cosmo);
 	k2a = (a + k1a * dtau / 2.) * Hconf(a + k1a * dtau / 2., fourpiG, cosmo);
 	k3a = (a + k2a * dtau / 2.) * Hconf(a + k2a * dtau / 2., fourpiG, cosmo);
 	k4a = (a + k3a * dtau) * Hconf(a + k3a * dtau, fourpiG, cosmo);
@@ -255,14 +287,14 @@ double particleHorizonIntegrand(double sqrta, void * cosmo)
 //////////////////////////
 // Description:
 //   computes the particle horizon (tau) at given scale factor
-// 
+//
 // Arguments:
 //   a          scale factor
 //   fourpiG    "4 pi G"
 //   cosmo      structure containing the cosmological parameters
 //
 // Returns: particle horizon (tau)
-// 
+//
 //////////////////////////
 
 double particleHorizon(const double a, const double fourpiG, cosmology & cosmo)
@@ -279,12 +311,12 @@ double particleHorizon(const double a, const double fourpiG, cosmology & cosmo)
 		gsl_function f;
 		double err;
 		size_t n;
-	
+
 		f.function = &particleHorizonIntegrand;
 		f.params = &cosmo;
-	
+
 		gsl_integration_qng(&f, sqrt(a) * 1.0e-7, sqrt(a), 5.0e-7, 1.0e-7, &result, &err, &n);
-	
+
 		return result / sqrt(fourpiG);
 	}
 }

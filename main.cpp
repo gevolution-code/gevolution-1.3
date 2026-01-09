@@ -49,6 +49,7 @@
 #include "gevolution.hpp"
 #include "ic_basic.hpp"
 #include "ic_read.hpp"
+#include "ic_curvature.hpp"
 #ifdef ICGEN_PREVOLUTION
 #include "ic_prevolution.hpp"
 #endif
@@ -325,6 +326,8 @@ int main(int argc, char **argv)
 		params, numparam); // generates ICs on the fly
 	else if (ic.generator == ICGEN_READ_FROM_DISK)
 		readIC(sim, ic, cosmo, fourpiG, a, tau, dtau, dtau_old, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, zetaFT, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, cycle, snapcount, pkcount, restartcount, IDbacklog);
+	else if (ic.generator == ICGEN_CURVATURE)
+		generateIC_curvature(sim, ic, cosmo, fourpiG, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, zetaFT, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, params, numparam);
 #ifdef ICGEN_RELIC
 	else if (ic.generator == ICGEN_RELIC)
 		generateIC_relic(sim, ic, cosmo, fourpiG, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, zetaFT, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, params, numparam);
@@ -1113,4 +1116,3 @@ delete [] IDbacklog;
 
 	return 0;
 }
-

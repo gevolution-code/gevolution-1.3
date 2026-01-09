@@ -1,12 +1,12 @@
 //////////////////////////
 // metadata.hpp
 //////////////////////////
-// 
+//
 // Constants and metadata structures
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: September 2024
+// Last modified: November 2024
 //
 //////////////////////////
 
@@ -94,6 +94,7 @@
 #undef ICGEN_FALCONIC
 #define ICGEN_FALCONIC              4
 #endif
+#define ICGEN_CURVATURE			    5
 
 #define VECTOR_PARABOLIC            0
 #define VECTOR_ELLIPTIC             1
@@ -248,6 +249,7 @@ struct metadata
 	double z_switch_linearchi;
 	double z_switch_deltancdm[MAX_PCL_SPECIES-2];
 	double z_switch_Bncdm[MAX_PCL_SPECIES-2];
+	double LTB_radius;
 	lightcone_geometry lightcone[MAX_OUTPUTS];
 	char basename_lightcone[PARAM_MAX_LENGTH];
 	char basename_snapshot[PARAM_MAX_LENGTH];
@@ -280,6 +282,8 @@ struct icsettings
 	double A_s;
 	double n_s;
 	double k_pivot;
+	double LTB_Omega_k;
+	double LTB_h_rescale;
 };
 
 struct cosmology

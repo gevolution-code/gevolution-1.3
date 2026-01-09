@@ -1,12 +1,12 @@
 //////////////////////////
 // tools.hpp
 //////////////////////////
-// 
+//
 // Collection of analysis tools for gevolution
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
 //
-// Last modified: April 2019
+// Last modified: November 2024
 //
 //////////////////////////
 
@@ -30,7 +30,7 @@ using namespace LATfield2;
 //////////////////////////
 // Description:
 //   generates the cross spectrum for two Fourier images
-// 
+//
 // Arguments:
 //   fld1FT     reference to the first Fourier image for which the cross spectrum should be extracted
 //   fld2FT     reference to the second Fourier image for which the cross spectrum should be extracted
@@ -47,7 +47,7 @@ using namespace LATfield2;
 //   comp2      for component-wise cross spectra, the component for the second field (ignored if negative)
 //
 // Returns:
-// 
+//
 //////////////////////////
 
 void extractCrossSpectrum(Field<Cplx> & fld1FT, Field<Cplx> & fld2FT, Real * kbin, Real * power, Real * kscatter, Real * pscatter, int * occupation, const int numbins, const bool deconvolve = true, const int ktype = KTYPE_LINEAR, const int comp1 = -1, const int comp2 = -1)
@@ -59,10 +59,10 @@ void extractCrossSpectrum(Field<Cplx> & fld1FT, Field<Cplx> & fld2FT, Real * kbi
 	Real k2max, k2, s;
 	rKSite k(fld1FT.lattice());
 	Cplx p;
-	
+
 	typek2 = (Real *) malloc(linesize * sizeof(Real));
 	sinc = (Real *) malloc(linesize * sizeof(Real));
-	
+
 	if (ktype == KTYPE_GRID)
 	{
 		for (i = 0; i < linesize; i++)
@@ -84,7 +84,7 @@ void extractCrossSpectrum(Field<Cplx> & fld1FT, Field<Cplx> & fld2FT, Real * kbi
 			typek2[i] *= typek2[i];
 		}
 	}
-	
+
 	sinc[0] = 1.;
 	if (deconvolve)
 	{
@@ -104,9 +104,9 @@ void extractCrossSpectrum(Field<Cplx> & fld1FT, Field<Cplx> & fld2FT, Real * kbi
 	{
 		sinc[i] = sinc[linesize-i];
 	}
-	
+
 	k2max = 3. * typek2[linesize/2];
-	
+
 	for (i = 0; i < numbins; i++)
 	{
 		kbin[i] = 0.;
@@ -115,7 +115,7 @@ void extractCrossSpectrum(Field<Cplx> & fld1FT, Field<Cplx> & fld2FT, Real * kbi
 		pscatter[i] = 0.;
 		occupation[i] = 0;
 	}
-	
+
 	for (k.first(); k.test(); k.next())
 	{
 		if (k.coord(0) == 0 && k.coord(1) == 0 && k.coord(2) == 0)
@@ -126,11 +126,11 @@ void extractCrossSpectrum(Field<Cplx> & fld1FT, Field<Cplx> & fld2FT, Real * kbi
 			weight = 1;
 		else
 			weight = 2;
-			
+
 		k2 = typek2[k.coord(0)] + typek2[k.coord(1)] + typek2[k.coord(2)];
 		s = sinc[k.coord(0)] * sinc[k.coord(1)] * sinc[k.coord(2)];
 		s *= s;
-		
+
 		if (comp1 >= 0 && comp2 >= 0 && comp1 < fld1FT.components() && comp2 < fld2FT.components())
 		{
 			p = fld1FT(k, comp1) * fld2FT(k, comp2).conj();
@@ -151,9 +151,9 @@ void extractCrossSpectrum(Field<Cplx> & fld1FT, Field<Cplx> & fld2FT, Real * kbi
 			for (i = 0; i < fld1FT.components(); i++)
 				p += fld1FT(k, i) * fld2FT(k, i).conj();
 		}
-		
+
 		i = (int) floor((double) ((Real) numbins * sqrt(k2 / k2max)));
-		if (i < numbins) 
+		if (i < numbins)
 		{
 			kbin[i] += weight * sqrt(k2);
 			kscatter[i] += weight * k2;
@@ -162,7 +162,7 @@ void extractCrossSpectrum(Field<Cplx> & fld1FT, Field<Cplx> & fld2FT, Real * kbi
 			occupation[i] += weight;
 		}
 	}
-	
+
 	free(typek2);
 	free(sinc);
 
@@ -217,7 +217,7 @@ void extractCrossSpectrum(Field<Cplx> & fld1FT, Field<Cplx> & fld2FT, Real * kbi
 //////////////////////////
 // Description:
 //   generates the power spectrum for a Fourier image
-// 
+//
 // Arguments:
 //   fldFT      reference to the Fourier image for which the power spectrum should be extracted
 //   kbin       allocated array that will contain the central k-value for the bins
@@ -231,7 +231,7 @@ void extractCrossSpectrum(Field<Cplx> & fld1FT, Field<Cplx> & fld2FT, Real * kbi
 //                  1: linear (default)
 //
 // Returns:
-// 
+//
 //////////////////////////
 
 void extractPowerSpectrum(Field<Cplx> & fldFT, Real * kbin, Real * power, Real * kscatter, Real * pscatter, int * occupation, const int numbins, const bool deconvolve = true, const int ktype = KTYPE_LINEAR)
@@ -246,7 +246,7 @@ void extractPowerSpectrum(Field<Cplx> & fldFT, Real * kbin, Real * power, Real *
 //////////////////////////
 // Description:
 //   writes power spectra as tabulated data into ASCII file
-// 
+//
 // Arguments:
 //   kbin           array containing the central values of k for each bin
 //   power          array containing the central values of P(k) for each bin
@@ -262,7 +262,7 @@ void extractPowerSpectrum(Field<Cplx> & fldFT, Real * kbin, Real * power, Real *
 //   z_target       target redshift for this output (used only if EXACT_OUTPUT_REDSHIFTS is defined)
 //
 // Returns:
-// 
+//
 //////////////////////////
 
 void writePowerSpectrum(Real * kbin, Real * power, Real * kscatter, Real * pscatter, int * occupation, const int numbins, const Real rescalek, const Real rescalep, const char * filename, const char * description, double a, const double z_target = -1)
@@ -353,14 +353,14 @@ void writePowerSpectrum(Real * kbin, Real * power, Real * kscatter, Real * pscat
 //////////////////////////
 // Description:
 //   computes some diagnostics for the spin-1 perturbation
-// 
+//
 // Arguments:
 //   Bi         reference to the real-space vector field to analyze
 //   mdivB      will contain the maximum value of the divergence of Bi
 //   mcurlB     will contain the maximum value of the curl of Bi
 //
 // Returns:
-// 
+//
 //////////////////////////
 
 void computeVectorDiagnostics(Field<Real> & Bi, Real & mdivB, Real & mcurlB)
@@ -368,10 +368,10 @@ void computeVectorDiagnostics(Field<Real> & Bi, Real & mdivB, Real & mcurlB)
 	Real b1, b2, b3, b4;
 	const Real linesize = (Real) Bi.lattice().sizeLocal(0);
 	Site x(Bi.lattice());
-	
+
 	mdivB = 0.;
 	mcurlB = 0.;
-	
+
 	for (x.first(); x.test(); x.next())
 	{
 		b1 = fabs((Bi(x,0)-Bi(x-0,0)) + (Bi(x,1)-Bi(x-1,1)) + (Bi(x,2)-Bi(x-2,2))) * linesize;
@@ -382,7 +382,7 @@ void computeVectorDiagnostics(Field<Real> & Bi, Real & mdivB, Real & mcurlB)
 		b4 = sqrt(b1 * b1 + b2 * b2 + b3 * b3);
 		if (b4 > mcurlB) mcurlB = b4;
 	}
-	
+
 	parallel.max<Real>(mdivB);
 	parallel.max<Real>(mcurlB);
 }
@@ -393,7 +393,7 @@ void computeVectorDiagnostics(Field<Real> & Bi, Real & mdivB, Real & mcurlB)
 //////////////////////////
 // Description:
 //   computes some diagnostics for the spin-2 perturbation
-// 
+//
 // Arguments:
 //   hij        reference to the real-space tensor field to analyze
 //   mdivh      will contain the maximum value of the divergence of hij
@@ -401,7 +401,7 @@ void computeVectorDiagnostics(Field<Real> & Bi, Real & mdivB, Real & mcurlB)
 //   mnormh     will contain the maximum value of the norm of hij
 //
 // Returns:
-// 
+//
 //////////////////////////
 
 void computeTensorDiagnostics(Field<Real> & hij, Real & mdivh, Real & mtraceh, Real & mnormh)
@@ -409,11 +409,11 @@ void computeTensorDiagnostics(Field<Real> & hij, Real & mdivh, Real & mtraceh, R
 	Real d1, d2, d3;
 	const Real linesize = (Real) hij.lattice().sizeLocal(0);
 	Site x(hij.lattice());
-	
+
 	mdivh = 0.;
 	mtraceh = 0.;
 	mnormh = 0.;
-	
+
 	for (x.first(); x.test(); x.next())
 	{
 		d1 = (hij(x+0, 0, 0) - hij(x, 0, 0) + hij(x, 0, 1) - hij(x-1, 0, 1) + hij(x, 0, 2) - hij(x-2, 0, 2)) * linesize;
@@ -426,7 +426,7 @@ void computeTensorDiagnostics(Field<Real> & hij, Real & mdivh, Real & mtraceh, R
 		d1 = sqrt(hij(x, 0, 0) * hij(x, 0, 0) + 2. * hij(x, 0, 1) * hij(x, 0, 1) + 2. * hij(x, 0, 2)* hij(x, 0, 2) + hij(x, 1, 1) * hij(x, 1, 1) + 2. * hij(x, 1, 2) * hij(x, 1, 2) + hij(x, 2, 2) * hij(x, 2, 2));
 		if (d1 > mnormh) mnormh = d1;
 	}
-	
+
 	parallel.max<Real>(mdivh);
 	parallel.max<Real>(mtraceh);
 	parallel.max<Real>(mnormh);
@@ -439,7 +439,7 @@ void computeTensorDiagnostics(Field<Real> & hij, Real & mdivh, Real & mtraceh, R
 // Description:
 //   determines periodic copies of light cone vertex for which the present
 //   look-back interval may overlap with a given spatial domain
-// 
+//
 // Arguments:
 //   lightcone  reference to structure describing light cone geometry
 //   outer      outer (far) limit of look-back interval
@@ -449,7 +449,7 @@ void computeTensorDiagnostics(Field<Real> & hij, Real & mdivh, Real & mtraceh, R
 //
 // Returns:
 //   number of vertices found
-// 
+//
 //////////////////////////
 
 int findIntersectingLightcones(lightcone_geometry & lightcone, double outer, double inner, double * domain, double vertex[MAX_INTERSECTS][3])
@@ -613,7 +613,7 @@ int findIntersectingLightcones(lightcone_geometry & lightcone, double outer, dou
 					}
 					else if (vertex[n][2]-domain[5] > outer || domain[2]-vertex[n][2] > outer) continue;
 				}
-				
+
 				if (sqrt((corner[0][0]-vertex[n][0])*(corner[0][0]-vertex[n][0]) + (corner[0][1]-vertex[n][1])*(corner[0][1]-vertex[n][1]) + (corner[0][2]-vertex[n][2])*(corner[0][2]-vertex[n][2])) < inner && sqrt((corner[1][0]-vertex[n][0])*(corner[1][0]-vertex[n][0]) + (corner[1][1]-vertex[n][1])*(corner[1][1]-vertex[n][1]) + (corner[1][2]-vertex[n][2])*(corner[1][2]-vertex[n][2])) < inner && sqrt((corner[2][0]-vertex[n][0])*(corner[2][0]-vertex[n][0]) + (corner[2][1]-vertex[n][1])*(corner[2][1]-vertex[n][1]) + (corner[2][2]-vertex[n][2])*(corner[2][2]-vertex[n][2])) < inner && sqrt((corner[3][0]-vertex[n][0])*(corner[3][0]-vertex[n][0]) + (corner[3][1]-vertex[n][1])*(corner[3][1]-vertex[n][1]) + (corner[3][2]-vertex[n][2])*(corner[3][2]-vertex[n][2])) < inner && sqrt((corner[4][0]-vertex[n][0])*(corner[4][0]-vertex[n][0]) + (corner[4][1]-vertex[n][1])*(corner[4][1]-vertex[n][1]) + (corner[4][2]-vertex[n][2])*(corner[4][2]-vertex[n][2])) < inner && sqrt((corner[5][0]-vertex[n][0])*(corner[5][0]-vertex[n][0]) + (corner[5][1]-vertex[n][1])*(corner[5][1]-vertex[n][1]) + (corner[5][2]-vertex[n][2])*(corner[5][2]-vertex[n][2])) < inner && sqrt((corner[6][0]-vertex[n][0])*(corner[6][0]-vertex[n][0]) + (corner[6][1]-vertex[n][1])*(corner[6][1]-vertex[n][1]) + (corner[6][2]-vertex[n][2])*(corner[6][2]-vertex[n][2])) < inner && sqrt((corner[7][0]-vertex[n][0])*(corner[7][0]-vertex[n][0]) + (corner[7][1]-vertex[n][1])*(corner[7][1]-vertex[n][1]) + (corner[7][2]-vertex[n][2])*(corner[7][2]-vertex[n][2])) < inner) continue; // domain lies within inner sphere
 
 				rdom = 0.5 * sqrt((domain[3]-domain[0])*(domain[3]-domain[0]) + (domain[4]-domain[1])*(domain[4]-domain[1]) + (domain[5]-domain[2])*(domain[5]-domain[2]));
@@ -629,14 +629,14 @@ int findIntersectingLightcones(lightcone_geometry & lightcone, double outer, dou
 				{
 					n++;
 					continue;
-				} 
+				}
 
 				if (dist > outer && acos(((0.5*domain[0]+0.5*domain[3]-vertex[n][0])*lightcone.direction[0] + (0.5*domain[1]+0.5*domain[4]-vertex[n][1])*lightcone.direction[1] + (0.5*domain[2]+0.5*domain[5]-vertex[n][2])*lightcone.direction[2]) / dist) - acos(lightcone.opening) <= acos((outer*outer + dist*dist - rdom*rdom) / (2. * outer * dist))) // enclosing sphere within opening
 				{
 					n++;
 					continue;
 				}
-				
+
 				if (dist <= outer && acos(((0.5*domain[0]+0.5*domain[3]-vertex[n][0])*lightcone.direction[0] + (0.5*domain[1]+0.5*domain[4]-vertex[n][1])*lightcone.direction[1] + (0.5*domain[2]+0.5*domain[5]-vertex[n][2])*lightcone.direction[2]) / dist) - acos(lightcone.opening) <= asin(rdom / dist)) // enclosing sphere within opening
 				{
 					n++;
@@ -650,17 +650,151 @@ int findIntersectingLightcones(lightcone_geometry & lightcone, double outer, dou
 
 
 //////////////////////////
+// computeTruncatedCellVolume
+//////////////////////////
+// Description:
+//   computes the volume of cell truncated by a plane at a given
+//   distance from the origin; the cell is assumed to be a unit cube
+//
+// Arguments:
+//   vertex     vertex of cell
+//   origin     origin
+//   distance   distance of truncating plane from origin
+//
+// Returns:
+//   volume of truncated cell
+//
+//////////////////////////
+
+Real computeTruncatedCellVolume(Real vertex[3], Real origin[3], Real distance)
+{
+	Real v[3];
+
+	v[0] = vertex[0] - origin[0];
+	v[1] = vertex[1] - origin[1];
+	v[2] = vertex[2] - origin[2];
+
+	// check if cell lies within truncating distance
+	//if (v[0]*v[0] + v[1]*v[1] + v[2]*v[2] < distance*distance + 0.75 - sqrt(3.)*distance) return Real(0);
+	if (v[0]*v[0] + v[1]*v[1] + v[2]*v[2] < (distance-2)*(distance-2)) return Real(0);
+
+	if (v[0]*v[0] + v[1]*v[1] + v[2]*v[2] > (distance+2)*(distance+2)) return Real(1);
+
+	Real volume = Real(0);
+	Real c1, c2, s1, s2;
+
+	c2 = v[2] / sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+	s2 = (c2*c2 >= Real(1) ? Real(0) : sqrt(Real(1) - c2*c2));
+	c1 = (v[0] != Real(0) || v[1] != Real(0)) ? atan2(v[1], v[0]) : Real(0);
+	s1 = sin(c1);
+	c1 = cos(c1);
+
+	// cell vertices (including two spare ones for later convenience)
+	// Real x[10][3] = {{0.5, 0.5, 0.5}, {0.5, 0.5, -0.5}, {0.5, -0.5, 0.5}, {0.5, -0.5, -0.5}, {-0.5, 0.5, 0.5}, {-0.5, 0.5, -0.5}, {-0.5, -0.5, 0.5}, {-0.5, -0.5, -0.5}, {0, 0, 0}, {0, 0, 0}};
+	Real x[10][3] = {{-0.5, -0.5, -0.5}, {0.5, -0.5, -0.5}, {0.5, 0.5, -0.5}, {-0.5, 0.5, -0.5}, {-0.5, -0.5, 0.5}, {0.5, -0.5, 0.5}, {0.5, 0.5, 0.5}, {-0.5, 0.5, 0.5}, {0, 0, 0}, {0, 0, 0}};
+
+	// cell faces as list of vertices, each face is a list of 4 integer indices, counting the vertices counter-clockwise when seen from the outside
+	//int faces[6][4] = {{0, 1, 3, 2}, {0, 4, 5, 1}, {0, 2, 6, 4}, {7, 5, 4, 6}, {7, 6, 2, 3}, {7, 3, 1, 5}};
+	int faces[6][4] = {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4}, {2, 3, 7, 6}, {0, 4, 7, 3}, {1, 2, 6, 5}};
+
+	// offset and rotate cell vertices
+	for (int i = 0; i < 8; i++)
+	{
+		Real x1 = x[i][0] + v[0];
+		Real x2 = x[i][1] + v[1];
+		Real x3 = x[i][2] + v[2];
+
+		x[i][0] = c1*c2*x1 + s1*c2*x2 - s2*x3;
+		x[i][1] = -s1*x1 + c1*x2;
+		x[i][2] = s2*c1*x1 + s2*s1*x2 + c2*x3 - distance;
+	}
+
+	// compute volume of truncated cell using the divergence theorem
+	for (int i = 0; i < 6; i++)
+	{
+		int first = -1;
+		int prev = -1;
+
+		for (int j = 0; j < 4; j++)
+		{
+			if (x[faces[i][j]][2] >= 0)
+			{
+				if (first < 0) first = faces[i][j];
+				if (prev >= 0)
+				{
+					volume += x[first][0] * (x[prev][1] - x[faces[i][j]][1]) * (x[prev][2] + x[faces[i][j]][2]);
+					volume += x[first][1] * (x[prev][2] - x[faces[i][j]][2]) * (x[prev][0] + x[faces[i][j]][0]);
+					volume += x[first][2] * (x[prev][0] - x[faces[i][j]][0]) * (x[prev][1] + x[faces[i][j]][1]);
+				}
+				prev = faces[i][j];
+			}
+
+			if (x[faces[i][j]][2]*x[faces[i][(j+1)%4]][2] < 0)
+			{
+				// compute clipping vertex and store it in spare location
+				Real t = x[faces[i][j]][2] / (x[faces[i][j]][2] - x[faces[i][(j+1)%4]][2]);
+				//x[8][0] = x[faces[i][j]][0] + t * (x[faces[i][(j+1)%4]][0] - x[faces[i][j]][0]);
+				//x[8][1] = x[faces[i][j]][1] + t * (x[faces[i][(j+1)%4]][1] - x[faces[i][j]][1]);
+				//x[8][2] = 0;
+				Real x0 = x[faces[i][j]][0] + t * (x[faces[i][(j+1)%4]][0] - x[faces[i][j]][0]);
+				Real x1 = x[faces[i][j]][1] + t * (x[faces[i][(j+1)%4]][1] - x[faces[i][j]][1]);
+
+				if (first < 0)
+				{
+					x[9][0] = x0; //x[8][0];
+					x[9][1] = x1; //x[8][1];
+					x[9][2] = 0;
+					first = 9;
+				}
+				if (prev >= 0)
+				{
+					volume += x[first][0] * (x[prev][1] - x1) * x[prev][2];
+					volume += x[first][1] * x[prev][2] * (x[prev][0] + x0);
+					volume += x[first][2] * (x[prev][0] - x0) * (x[prev][1] + x1);
+				}
+
+				x[8][0] = x0;
+				x[8][1] = x1;
+				x[8][2] = 0;
+
+				prev = 8;
+			}
+		}
+
+		if (prev >= 0)
+		{
+			volume += x[first][0] * (x[prev][1] - x[first][1]) * (x[prev][2] + x[first][2]);
+			volume += x[first][1] * (x[prev][2] - x[first][2]) * (x[prev][0] + x[first][0]);
+			volume += x[first][2] * (x[prev][0] - x[first][0]) * (x[prev][1] + x[first][1]);
+		}
+	}
+
+	/*if (volume < -1e-4 || volume > 6.0001)
+	{
+		cout << " /!\\ warning: volume of truncated cell is " << volume / Real(6) << " at v = (" << v[0] << ", " << v[1] << ", " << v[2] << "), distance = " << distance << ", sin(theta) = " << s2 << ", cos(theta) = " << c2 << ", sin(phi) = " << s1 << ", cos(phi) = " << c1 << endl;
+		cout << "  vertices (after rotation): " << endl;
+		for (int i = 0; i < 8; i++)
+		{
+			cout << "   " << x[i][0] << " " << x[i][1] << " " << x[i][2] << endl;
+		}
+	}*/
+
+	return volume / Real(6);
+}
+
+
+//////////////////////////
 // hourMinSec
 //////////////////////////
 // Description:
 //   generates formatted output for cpu-time: hh..h:mm:ss.s
-// 
+//
 // Arguments:
 //   seconds    number of seconds
 //
 // Returns:
 //   formatted string
-// 
+//
 //////////////////////////
 
 string hourMinSec(double seconds)
