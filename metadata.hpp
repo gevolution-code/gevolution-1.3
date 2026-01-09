@@ -1,7 +1,7 @@
 //////////////////////////
 // metadata.hpp
 //////////////////////////
-// 
+//
 // Constants and metadata structures
 //
 // Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
