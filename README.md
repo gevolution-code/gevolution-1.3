@@ -1,7 +1,7 @@
 # gevolution-1.3
 
-Copyright (c) 2015-2024 Julian Adamek
-(Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
+Copyright (c) 2015-2026 Julian Adamek
+(Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich & ETH Zürich)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -50,6 +50,6 @@ If you use gevolution for scientific work, we kindly ask you to cite
 in your publications.
 
 For bug reports and other important feedback you can contact the authors,
-julian.adamek@uzh.ch (for queries related to gevolution)
+adamekj@ethz.ch (for queries related to gevolution)
 developers@latfield.org (for queries related to the LATfield2 library)
 
