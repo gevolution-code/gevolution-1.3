@@ -4,9 +4,9 @@
 //
 // Parser for settings file
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich & ETH Zürich)
 //
-// Last modified: March 2025
+// Last modified: January 2026
 //
 //////////////////////////
 
@@ -802,21 +802,9 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 			ic.generator = ICGEN_READ_FROM_DISK;
 		else if (par_string[0] == 'L' || par_string[0] == 'l')
 			ic.generator = ICGEN_CURVATURE;
-#ifdef ICGEN_PREVOLUTION
-		else if (par_string[0] == 'P' || par_string[0] == 'p')
-			ic.generator = ICGEN_PREVOLUTION;
-#endif
-#ifdef ICGEN_SONG
-		else if (par_string[0] == 'S' || par_string[0] == 's')
-			ic.generator = ICGEN_SONG;
-#endif
 #ifdef ICGEN_RELIC
 		else if ((par_string[0] == 'R' || par_string[0] == 'r') && (par_string[2] == 'L' || par_string[2] == 'l'))
 			ic.generator = ICGEN_RELIC;
-#endif
-#ifdef ICGEN_FALCONIC
-		else if (par_string[0] == 'F' || par_string[0] == 'f')
-			ic.generator = ICGEN_FALCONIC;
 #endif
 		else
 		{
@@ -846,9 +834,6 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		}
 	}
 	else if (!parseParameter(params, numparam, "template file", pptr, i)
-	#ifdef ICGEN_SONG
-		&& ic.generator != ICGEN_SONG
-	#endif
 	#ifdef ICGEN_RELIC
 		&& ic.generator != ICGEN_RELIC
 	#endif
@@ -868,21 +853,11 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 			strcpy(ic.pclfile[i], ic.pclfile[i-1]);
 	}
 
-	if ((!parseParameter(params, numparam, "mPk file", ic.pkfile) && !parseParameter(params, numparam, "Tk file", ic.tkfile)
-#ifdef ICGEN_SONG
-		&& ic.generator != ICGEN_SONG
-#endif
+	if (!parseParameter(params, numparam, "mPk file", ic.pkfile) && !parseParameter(params, numparam, "Tk file", ic.tkfile)
 #ifdef ICGEN_RELIC
 		&& ic.generator != ICGEN_RELIC
 #endif
-#ifdef ICGEN_FALCONIC
-		&& ic.generator != ICGEN_FALCONIC
-#endif
 	&& ic.generator != ICGEN_READ_FROM_DISK)
-#ifdef ICGEN_PREVOLUTION
-	    || ic.generator == ICGEN_PREVOLUTION
-#endif
-		)
 	{
 #ifdef HAVE_CLASS
 		COUT << " initial transfer functions will be computed by calling CLASS" << endl;
@@ -1009,11 +984,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		{
 			sim.radiation_flag = 1;
 			COUT << " radiation treatment set to: " << COLORTEXT_CYAN << "CLASS" << COLORTEXT_RESET << endl;
-			if ((ic.pkfile[0] != '\0' || ic.tkfile[0] != '\0')
-#ifdef ICGEN_PREVOLUTION
-				&& ic.generator != ICGEN_PREVOLUTION
-#endif
-				)
+			if (ic.pkfile[0] != '\0' || ic.tkfile[0] != '\0')
 			{
 				COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": using radiation treatment = CLASS and providing initial power spectra / transfer functions independently" << endl;
 				COUT << "              is dangerous! In order to ensure consistency, it is recommended to call CLASS directly." << endl;
@@ -1049,11 +1020,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		{
 			sim.fluid_flag = 1;
 			COUT << " fluid treatment set to: " << COLORTEXT_CYAN << "CLASS" << COLORTEXT_RESET << endl;
-			if ((ic.pkfile[0] != '\0' || ic.tkfile[0] != '\0')
-#ifdef ICGEN_PREVOLUTION
-				&& ic.generator != ICGEN_PREVOLUTION
-#endif
-				)
+			if (ic.pkfile[0] != '\0' || ic.tkfile[0] != '\0')
 			{
 				COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": using fluid treatment = CLASS and providing initial power spectra / transfer functions independently" << endl;
 				COUT << "              is dangerous! In order to ensure consistency, it is recommended to call CLASS directly." << endl;
@@ -1103,20 +1070,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 			}
 		}
 	}
-#ifdef ICGEN_PREVOLUTION
-	else if (ic.generator == ICGEN_PREVOLUTION)
-	{
-		if (!parseParameter(params, numparam, "prevolution redshift", ic.z_ic))
-		{
-			COUT << COLORTEXT_RED << " error" << COLORTEXT_RESET << ": no starting redshift specified for IC generator = prevolution" << endl;
-#ifdef LATFIELD2_HPP
-			parallel.abortForce();
-#endif
-		}
 
-		parseParameter(params, numparam, "prevolution Courant factor", ic.Cf);
-	}
-#endif
 #ifdef ICGEN_RELIC
 	else if (ic.generator == ICGEN_RELIC)
 	{
@@ -1155,38 +1109,17 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 	}
 #endif
 
-	if (!parseParameter(params, numparam, "A_s", ic.A_s) && (
-#ifdef ICGEN_FALCONIC
-		ic.generator == ICGEN_FALCONIC ||
-#endif
-#ifdef ICGEN_PREVOLUTION
-		ic.generator == ICGEN_PREVOLUTION ||
-#endif
-		sim.radiation_flag > 0 || (ic.pkfile[0] == '\0' && ic.generator != ICGEN_READ_FROM_DISK)))
+	if (!parseParameter(params, numparam, "A_s", ic.A_s) && (sim.radiation_flag > 0 || (ic.pkfile[0] == '\0' && ic.generator != ICGEN_READ_FROM_DISK)))
 	{
 		COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": power spectrum normalization not specified, using default value (2.215e-9)" << endl;
 	}
 
-	if (!parseParameter(params, numparam, "n_s", ic.n_s) && (
-#ifdef ICGEN_FALCONIC
-		ic.generator == ICGEN_FALCONIC ||
-#endif
-#ifdef ICGEN_PREVOLUTION
-		ic.generator == ICGEN_PREVOLUTION ||
-#endif
-		sim.radiation_flag > 0 || (ic.pkfile[0] == '\0' && ic.generator != ICGEN_READ_FROM_DISK)))
+	if (!parseParameter(params, numparam, "n_s", ic.n_s) && (sim.radiation_flag > 0 || (ic.pkfile[0] == '\0' && ic.generator != ICGEN_READ_FROM_DISK)))
 	{
 		COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": scalar spectral index not specified, using default value (0.9619)" << endl;
 	}
 
-	if (!parseParameter(params, numparam, "k_pivot", ic.k_pivot) && (
-#ifdef ICGEN_FALCONIC
-		ic.generator == ICGEN_FALCONIC ||
-#endif
-#ifdef ICGEN_PREVOLUTION
-		ic.generator == ICGEN_PREVOLUTION ||
-#endif
-		sim.radiation_flag > 0 || (ic.pkfile[0] == '\0' && ic.generator != ICGEN_READ_FROM_DISK)))
+	if (!parseParameter(params, numparam, "k_pivot", ic.k_pivot) && (sim.radiation_flag > 0 || (ic.pkfile[0] == '\0' && ic.generator != ICGEN_READ_FROM_DISK)))
 	{
 		COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": pivot scale not specified, using default value (0.05 / Mpc)" << endl;
 	}
@@ -1310,13 +1243,6 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 	}
 
 	if (ic.z_relax < -1.) ic.z_relax = sim.z_in;
-#ifdef ICGEN_PREVOLUTION
-	else if (ic.generator == ICGEN_PREVOLUTION && ic.z_relax < sim.z_in)
-	{
-		COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": relaxation redshift cannot be below initial redshift for IC generator = prevolution; reset to initial redshift!" << endl;
-		ic.z_relax = sim.z_in;
-	}
-#endif
 
 	if (ic.z_ic < sim.z_in && ic.generator != ICGEN_READ_FROM_DISK) ic.z_ic = sim.z_in;
 
@@ -1666,11 +1592,7 @@ int parseMetadata(parameter * & params, const int numparam, metadata & sim, cosm
 		{
 			COUT << " gravity theory set to: " << COLORTEXT_CYAN << "Newtonian" << COLORTEXT_RESET << endl;
 			sim.gr_flag = 0;
-			if (ic.pkfile[0] == '\0' && ic.tkfile[0] != '\0'
-#ifdef ICGEN_PREVOLUTION
-				&& ic.generator != ICGEN_PREVOLUTION
-#endif
-				)
+			if (ic.pkfile[0] == '\0' && ic.tkfile[0] != '\0')
 			{
 				COUT << COLORTEXT_YELLOW << " /!\\ warning" << COLORTEXT_RESET << ": gauge transformation to N-body gauge can only be performed for the positions; the transformation for" << endl;
 				COUT << "              the velocities requires time derivatives of transfer functions. Call CLASS directly to avoid this issue." << endl;

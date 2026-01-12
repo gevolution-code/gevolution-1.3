@@ -1,5 +1,5 @@
 //////////////////////////
-// Copyright (c) 2015-2024 Julian Adamek
+// Copyright (c) 2015-2026 Julian Adamek
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -26,9 +26,9 @@
 // 
 // main control sequence of Geneva N-body code with evolution of metric perturbations (gevolution)
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich & ETH Zürich)
 //
-// Last modified: December 2024
+// Last modified: January 2026
 //
 //////////////////////////
 
@@ -50,12 +50,6 @@
 #include "ic_basic.hpp"
 #include "ic_read.hpp"
 #include "ic_curvature.hpp"
-#ifdef ICGEN_PREVOLUTION
-#include "ic_prevolution.hpp"
-#endif
-#ifdef ICGEN_FALCONIC
-#include "fcn/togevolution.hpp"
-#endif
 #ifdef ICGEN_RELIC
 #include "ic_relic.hpp"
 #endif
@@ -331,14 +325,6 @@ int main(int argc, char **argv)
 #ifdef ICGEN_RELIC
 	else if (ic.generator == ICGEN_RELIC)
 		generateIC_relic(sim, ic, cosmo, fourpiG, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, zetaFT, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, params, numparam);
-#endif
-#ifdef ICGEN_PREVOLUTION
-	else if (ic.generator == ICGEN_PREVOLUTION)
-		generateIC_prevolution(sim, ic, cosmo, fourpiG, a, tau, dtau, dtau_old, &pcls_cdm, &pcls_b, pcls_ncdm, maxvel, &phi, &chi, &Bi, &source, &Sij, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_chi, &plan_Bi, &plan_source, &plan_Sij, params, numparam);
-#endif
-#ifdef ICGEN_FALCONIC
-	else if (ic.generator == ICGEN_FALCONIC)
-		maxvel[0] = generateIC_FalconIC(sim, ic, cosmo, fourpiG, dtau, &pcls_cdm, pcls_ncdm, maxvel+1, &phi, &source, &chi, &Bi, &source, &Sij, &scalarFT, &BiFT, &SijFT, &plan_phi, &plan_source, &plan_chi, &plan_Bi, &plan_source, &plan_Sij);
 #endif
 	else
 	{

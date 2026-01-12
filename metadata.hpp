@@ -4,9 +4,9 @@
 //
 // Constants and metadata structures
 //
-// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich)
+// Author: Julian Adamek (Université de Genève & Observatoire de Paris & Queen Mary University of London & Universität Zürich & ETH Zürich)
 //
-// Last modified: November 2024
+// Last modified: January 2026
 //
 //////////////////////////
 
@@ -76,23 +76,9 @@
 // Identifiers for IC generator modules
 #define ICGEN_BASIC                 0
 #define ICGEN_READ_FROM_DISK        1
-#ifdef ICGEN_PREVOLUTION
-#undef ICGEN_PREVOLUTION
-#define ICGEN_PREVOLUTION           2
-#endif
-#ifdef ICGEN_SONG
-#undef ICGEN_SONG
-#define ICGEN_SONG                  3
-#define ICGEN_RELIC				    3
-#endif
 #ifdef ICGEN_RELIC
 #undef ICGEN_RELIC
 #define ICGEN_RELIC                 3
-#define ICGEN_SONG				    3
-#endif
-#ifdef ICGEN_FALCONIC
-#undef ICGEN_FALCONIC
-#define ICGEN_FALCONIC              4
 #endif
 #define ICGEN_CURVATURE			    5
 
